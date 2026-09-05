@@ -144,6 +144,7 @@ import Lax3Proofs.SolveSweepPeel
 import Lax3Proofs.SolveRunWords
 import Lax3Proofs.SolveChannels
 import Lax3Proofs.SolveCodegen
+import Lax3Proofs.SolveStageCharge
 
 -- The proofs package of submission Lax3.
 --
