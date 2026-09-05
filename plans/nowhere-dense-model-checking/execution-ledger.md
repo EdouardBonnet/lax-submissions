@@ -59,6 +59,21 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — resumed on current main
+
+Recovered the parked PREP (`w62`), PEEL (`w61`), and AUG (`w63`) files
+into separate seeded `ndmc-*-finish` worktrees based on `e20e09a`.
+PREP is closing the tail and correcting oldest-first channel indexing;
+PEEL is closing initialization, iteration, and regrouping; AUG is replacing
+the dense scans with sparse demand enumeration. The per-child rank reset
+still needs a persistent cleanliness invariant before the final cost close.
+
+`ff6dceb` exposes `SolveSweepBuild.bldCore_spec` for AUG, with its statement
+and proof unchanged. Narrow and full Lake builds, the archive build and
+statement inspection pass; the core uses only `propext`, `Classical.choice`,
+and `Quot.sound`. Updated the local lax CLI from 0.1.31 to 0.1.41 because
+the former rejected main's existing `manifest.yaml` `issue` field.
+
 ### 2026-08-27 ~11:30Z — RESUME POINT 2: wrap-up at the second quota wall
 
 Jan ordered all workers to wrap up NOW; all three parked at green,

@@ -1794,7 +1794,7 @@ open Classical in
 array and raw allocations for the five output regions, the program
 leaves the order region and the deletable adjacency region at the
 empty deleted set, in `O(N + ns)`. -/
-private theorem bldCore_spec (B N ns : ℕ)
+theorem bldCore_spec (B N ns : ℕ)
     (o t ra ao aj dg mt od iv uv wv nN nS : String)
     (G : SimpleGraph (Fin N)) (π : Equiv.Perm (Fin N))
     (hW : ([ao, aj, dg, mt, od] : List String).Nodup)
@@ -2210,4 +2210,3 @@ theorem covAdjBuildIn_bldCom (C : GraphClass) (hC : NowhereDense C)
       exact hwvars y hy
 
 end Lax3Proofs.Prog
-
