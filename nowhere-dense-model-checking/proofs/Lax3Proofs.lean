@@ -123,6 +123,11 @@ import Lax3Proofs.SolveSweepStep
 import Lax3Proofs.SolveSweepOrder
 import Lax3Proofs.SolveSweepBuild
 import Lax3Proofs.SolveSweepMdPeel
+import Lax3Proofs.SolveMdCharge
+import Lax3Proofs.SolveSweepAug
+import Lax3Proofs.SolveSweepPeel
+import Lax3Proofs.SolveRunWords
+import Lax3Proofs.SolveChannels
 
 -- The proofs package of submission Lax3.
 --

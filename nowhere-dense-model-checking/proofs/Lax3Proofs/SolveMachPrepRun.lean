@@ -481,7 +481,7 @@ noncomputable def prepChan (S : Setup L) (ord : CoverSpec.OrderingRoutine)
     else []
 
 open Classical in
-private theorem prepDescendCol_eq_pathList {N : ℕ} (G : SimpleGraph (Fin N))
+theorem prepDescendCol_eq_pathList {N : ℕ} (G : SimpleGraph (Fin N))
     (s : Fin N) (d : ℕ) (v : Fin N) :
     descendCol G (ballDist G s d) d v = Lax3Proofs.BatchCanon.pathList G d s v := by
   have hiff : ballDist G s d v ≤ d ↔ WithinDist G d s v :=
