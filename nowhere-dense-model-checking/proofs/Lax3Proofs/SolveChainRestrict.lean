@@ -53,7 +53,7 @@ windowed contract at **both** arenas — the child's valid prefixes are
 again — at the landed budget `restrictK`. The slot-count bound rides
 `ns ≤ A.N²` (`ArenaStW.ns_le_sq`), so only carrier-level `< B` bounds
 are consumed. -/
-theorem restrictCom_specW {B n₀ Λc ℓp : ℕ} {hb : ℕ} {A : Impl.MArena Λc n₀ ℓp}
+theorem restrictCom_specW_suffix {B n₀ Λc ℓp : ℕ} {hb : ℕ} {A : Impl.MArena Λc n₀ ℓp}
     {S : Set (Fin A.N)} {nmP nmC : ArenaNames} {la ra : String}
     (hNB : A.N < B) (hNNB : A.N * A.N < B) (hn0B : n₀ < B)
     (hLB : A.N * Λc < B) (hHB : A.N * ℓp * (hb + 1) < B)
@@ -89,7 +89,8 @@ theorem restrictCom_specW {B n₀ Λc ℓp : ℕ} {hb : ℕ} {A : Impl.MArena Λ
         ArenaStW nmP hb A σ' ∧ σ'.vars nmP.nS = σ.vars nmP.nS ∧
         ClusterList la S σ' ∧ σ'.vars "rs.k" = S.ncard ∧
         A.N ≤ (σ'.arrs ra).length ∧
-        (σ'.arrs ra).take A.N = arrOf A.N (fun _ => 0))
+        (σ'.arrs ra).take A.N = arrOf A.N (fun _ => 0) ∧
+        (σ'.arrs ra).drop A.N = (σ.arrs ra).drop A.N)
       (restrictK (Impl.degSum A.G S) S.ncard Λc ℓp hb) := by
   -- the disequalities, spelled out (copies; the originals feed the
   -- landed spec whole)
@@ -238,7 +239,7 @@ theorem restrictCom_specW {B n₀ Λc ℓp : ℕ} {hb : ℕ} {A : Impl.MArena Λ
     · exact arrs_winA_congr (hwsPat nmP.up (by simp)) σ
     · exact arrs_winA_congr (hwsPat nmP.hist (by simp)) σ
   -- run the landed spec on the truncation, pad the derivation back
-  obtain ⟨σ', hrun, hfit', hQ, hlenEq, -⟩ :=
+  obtain ⟨σ', hrun, hfit', hQ, hlenEq, htail⟩ :=
     (specWindow (restrictCom_spec (B := B) (A := A) (S := S) (nmP := nmP)
       (nmC := nmC) (la := la) (ra := ra) (ns := ns) hNB hnsB hn0B hLB hHB
       hdisj hpair hCn hCs hCns hPn hPs hPn1 hPn2 hPs1 hPs2) ws) σ
@@ -252,7 +253,7 @@ theorem restrictCom_specW {B n₀ Λc ℓp : ℕ} {hb : ℕ} {A : Impl.MArena Λ
         length_arrs_winA hwsCup hCup,
         length_arrs_winA hwsChist hChist⟩
   obtain ⟨hstC', hcns', hstP', hns', hcl', hk', hra'⟩ := hQ
-  refine ⟨σ', hrun, ?_, hcns', ?_, hns', ?_, hk', ?_, ?_⟩
+  refine ⟨σ', hrun, ?_, hcns', ?_, hns', ?_, hk', ?_, ?_, ?_⟩
   · -- the child's windowed contract, at the child's dimensions
     have hcell : σ'.vars nmC.nS = cns := hcns'
     constructor
@@ -315,5 +316,54 @@ theorem restrictCom_specW {B n₀ Λc ℓp : ℕ} {hb : ℕ} {A : Impl.MArena Λ
   · -- the scratch window is clean again
     have := hra'
     rwa [arrs_winA_some hws_ra] at this
+
+  · exact htail ra A.N hws_ra
+
+open Classical in
+/-- The original windowed contract, forgetting only the preserved rank suffix. -/
+theorem restrictCom_specW {B n₀ Λc ℓp : ℕ} {hb : ℕ} {A : Impl.MArena Λc n₀ ℓp}
+    {S : Set (Fin A.N)} {nmP nmC : ArenaNames} {la ra : String}
+    (hNB : A.N < B) (hNNB : A.N * A.N < B) (hn0B : n₀ < B)
+    (hLB : A.N * Λc < B) (hHB : A.N * ℓp * (hb + 1) < B)
+    (hdisj : ∀ x ∈ [nmC.off, nmC.tgt, nmC.col, nmC.up, nmC.hist, ra],
+      ∀ y ∈ [nmP.off, nmP.tgt, nmP.col, nmP.up, nmP.hist, la], x ≠ y)
+    (hpair : ([nmC.off, nmC.tgt, nmC.col, nmC.up, nmC.hist, ra]).Pairwise (· ≠ ·))
+    (hCn : nmC.nN ∉ rsScalars) (hCs : nmC.nS ∉ rsScalars)
+    (hCns : nmC.nN ≠ nmC.nS)
+    (hPn : nmP.nN ∉ rsScalars) (hPs : nmP.nS ∉ rsScalars)
+    (hPn1 : nmP.nN ≠ nmC.nN) (hPn2 : nmP.nN ≠ nmC.nS)
+    (hPs1 : nmP.nS ≠ nmC.nN) (hPs2 : nmP.nS ≠ nmC.nS)
+    -- the windowing's own side conditions (all `lv`-dischargeable)
+    (hnd5P : ([nmP.off, nmP.tgt, nmP.col, nmP.up, nmP.hist] :
+      List String).Nodup)
+    (hla5 : la ∉ ([nmP.off, nmP.tgt, nmP.col, nmP.up, nmP.hist] :
+      List String)) :
+    Spec B
+      (fun σ => ArenaStW nmP hb A σ ∧
+        ClusterList la S σ ∧ σ.vars "rs.k" = S.ncard ∧
+        σ.vars "rs.l" = Λc ∧ σ.vars "rs.p" = ℓp ∧ σ.vars "rs.h" = hb ∧
+        A.N ≤ (σ.arrs ra).length ∧
+        (σ.arrs ra).take A.N = arrOf A.N (fun _ => 0) ∧
+        S.ncard + 1 ≤ (σ.arrs nmC.off).length ∧
+        (∑ v : Fin (A.restrict S).N, (A.restrict S).G.degree v)
+          ≤ (σ.arrs nmC.tgt).length ∧
+        S.ncard * Λc ≤ (σ.arrs nmC.col).length ∧
+        S.ncard ≤ (σ.arrs nmC.up).length ∧
+        S.ncard * ℓp * (hb + 1) ≤ (σ.arrs nmC.hist).length)
+      (restrictCom nmP nmC la ra)
+      (fun σ σ' => ArenaStW nmC hb (A.restrict S) σ' ∧
+        σ'.vars nmC.nS
+          = ∑ v : Fin (A.restrict S).N, (A.restrict S).G.degree v ∧
+        ArenaStW nmP hb A σ' ∧ σ'.vars nmP.nS = σ.vars nmP.nS ∧
+        ClusterList la S σ' ∧ σ'.vars "rs.k" = S.ncard ∧
+        A.N ≤ (σ'.arrs ra).length ∧
+        (σ'.arrs ra).take A.N = arrOf A.N (fun _ => 0))
+      (restrictK (Impl.degSum A.G S) S.ncard Λc ℓp hb) := by
+  refine (restrictCom_specW_suffix (B := B) (A := A) (S := S)
+    (nmP := nmP) (nmC := nmC) (la := la) (ra := ra)
+    hNB hNNB hn0B hLB hHB hdisj hpair hCn hCs hCns hPn hPs
+    hPn1 hPn2 hPs1 hPs2 hnd5P hla5).post ?_
+  rintro σ σ' _ ⟨hC, hnsC, hP, hnsP, hcl, hk, hlen, hclean, _⟩
+  exact ⟨hC, hnsC, hP, hnsP, hcl, hk, hlen, hclean⟩
 
 end Lax3Proofs.Prog

@@ -59,6 +59,29 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — sparse build and computed-rank adapter landed
+
+Reviewed `fbf06d3`, landed through `e898e98`. `agBuildPeel_spec` composes
+padded CSR, identity-rank initialization, the real adjacency builder, and
+heap peeling to exact `mdRank`. Its budget retains the full
+`11*N+6+bldCoreK N M+KmdPeel N M`; raw allocations suffice and the source
+CSR/size cells survive. Full archive build, concrete fixed-name consumers,
+and standard-axiom checks pass. Next dependent leaf is the clean cover
+composition around the full AUG core.
+
+### 2026-09-05 — clean PREP recursion landed
+
+Reviewed worker `f497f73` and landed through `0441d30`. `prepCleanCom`
+returns root-prefix rank cleanliness and bounded array words across every
+recursive block; restriction preserves the unused suffix. The existing zero
+materialization establishes the root invariant. The actual per-child budget
+removes exactly `11*A.N+5`, accounting for the replacement skip. Public
+path-list and compatibility APIs remain intact. Full archive build and axiom
+checks pass; the root solve theorem retains only the existing UQW dependency.
+Next: concrete names/allocation/clean-chain instantiation, sparse full AUG,
+and a uniform scalar-cost comparison. Reuse the clean, seeded worktrees for
+these immediate followups; unrelated stream-colour WIP remains untouched.
+
 ### 2026-09-05 — sparse pair preparation landed
 
 `bedc1cc` lands checkpoint `69a1a00`: actual CSR rows yield the unique

@@ -116,6 +116,12 @@ import Lax3Proofs.SolveCovLoad
 import Lax3Proofs.SolveCovStep
 import Lax3Proofs.SolveMachPrep
 import Lax3Proofs.SolveMachPrepRun
+import Lax3Proofs.SolvePrepCleanFit
+import Lax3Proofs.SolvePrepCleanState
+import Lax3Proofs.SolvePrepCleanStep
+import Lax3Proofs.SolvePrepCleanLoop
+import Lax3Proofs.SolvePrepCleanFrame
+import Lax3Proofs.SolvePrepCleanRoot
 import Lax3Proofs.SolveMachRead
 import Lax3Proofs.SolveSegReadRun
 import Lax3Proofs.SolveSweepAdj
@@ -130,6 +136,7 @@ import Lax3Proofs.SolveSweepAugStep
 import Lax3Proofs.SolveSweepAugStepScan
 import Lax3Proofs.SolveSweepAugRound
 import Lax3Proofs.SolveSweepAugCsr
+import Lax3Proofs.SolveSweepAugBuildPeel
 import Lax3Proofs.SolveSweepAugPairFilter
 import Lax3Proofs.SolveSweepAugExtract
 import Lax3Proofs.SolveSweepPeel
