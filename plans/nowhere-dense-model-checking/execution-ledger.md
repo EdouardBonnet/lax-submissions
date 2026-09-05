@@ -59,6 +59,18 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — sparse augmentation API and deterministic costing
+
+`9cf5300` lands AUG's validated sparse dictionary and CSR witness scans
+(checkpoints `844b372`, `78bbd06`) and `SolveMdCharge`. Each transitive or
+fraternal demand pass costs `58 * candidates + 30 * arcs + 22 * N + 8`.
+The deterministic `mdChain` now has uniform in-degree and wreach bounds,
+and its sparse-count envelope times the actual lazy-heap logarithm is
+proved almost linear on nonempty subgraph copies. Constants precede the
+graph. This remains a prerequisite to `CovAugAdjIn`, not its discharge.
+Full Lake build, archive inspection, and axiom checks pass; these new
+results use only `propext`, `Classical.choice`, and `Quot.sound`.
+
 ### 2026-09-05 — PREP machine boundary landed
 
 `2fe7db5` lands `SolveMachPrepRun` and its root import. The conditional
