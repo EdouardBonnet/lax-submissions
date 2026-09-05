@@ -59,6 +59,16 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — sparse build and computed-rank adapter landed
+
+Reviewed `fbf06d3`, landed through `e898e98`. `agBuildPeel_spec` composes
+padded CSR, identity-rank initialization, the real adjacency builder, and
+heap peeling to exact `mdRank`. Its budget retains the full
+`11*N+6+bldCoreK N M+KmdPeel N M`; raw allocations suffice and the source
+CSR/size cells survive. Full archive build, concrete fixed-name consumers,
+and standard-axiom checks pass. Next dependent leaf is the clean cover
+composition around the full AUG core.
+
 ### 2026-09-05 — clean PREP recursion landed
 
 Reviewed worker `f497f73` and landed through `0441d30`. `prepCleanCom`
