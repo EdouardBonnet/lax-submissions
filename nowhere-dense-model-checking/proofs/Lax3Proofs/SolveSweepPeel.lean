@@ -3,23 +3,6 @@ import Lax3Proofs.SolveBfs
 import Lax67Proofs.Tactic
 
 /-!
-STATE OF THE LEAF (2026-08-27, wave w61, quota stop — file compiles, 0 sorries):
-PROVED: full program text (§2); mate-swap deletion `peel_delete_turn` /
-`peelDelTurnB_spec` / `peelDelB_spec`; seed `peelSeedB_spec`; expansion
-`peelExpandB_spec` / `peelExpand_loop`; the potential-priced BFS pop loop
-`peelBfs_loop` (64·peelDeg + 128·|fibre| + 4); reset `peelResetB_spec`;
-and the full rank step `peelStepB_spec` (SwInv i → SwInv (i+1), cost
-64·peelDeg i + 187·|pfibR i| + 57) including the bfs_exact/ctr-based
-first-hit-mark correctness.  REMAINS: `peelInitB` prologue spec; sweep
-loop over ranks (Spec.while_potential, tail-sum Σ stepK — mirror
-centreLoop_of_step in SolveGlueLoop); regroup passes P1–P7 (counts →
-prefix → scatter via cntBelow/restrictEmb of §6) closing `CtrArr` +
-`ClusterCsr`; budget bridge peelK ≤ c₁·Impl.sweepCharge + c₂·N + c₃
-(peelDeg ≤ 2·Σ dlt double count + curdeg_le_pfib, needs 1 ≤ R); core
-theorem over (B,N,G,π,R); headline `covPeelIn_peelCom` at Spl := peelScr,
-plC := peelCom-family, Kpl := peelK — one F7-suppliable word-room
-hypothesis (mcB q x lower bound) expected at the headline.
-
 # F6c12 — `CovPeelIn`: the GKS peeling sweep, discharged
 
 `SolveSweepStep` names `CovPeelIn`: from the built deletable adjacency
@@ -75,11 +58,20 @@ One program (`peelCom`), five phases:
   `z` is its live degree when `z` can be expanded (`dist < 2R`) plus a
   constant; the deletion at `u`'s current degree rides inside the
   cluster mass (`curDeg_at_deletion_le_cluster`).  The closed budget
-  `peelK` is `Σ_i (peelDeg + peelNc) + O(N)` in shape;
+  `peelK` is `Σ_i (64·peelDeg i + 256·|X_i| + 256) + 256·N + 256`;
   `peelK_le_sweepCharge` closes it against a constant multiple of the
   landed `Impl.sweepCharge` account under the wreach-degree bound —
   the scanned edges live inside the ball, and each is charged to the
   back-degree `dlt` of its later endpoint (GKS tex:1488-1491).
+  The comparison is `peelK ≤ 640·sweepCharge + 256·N + 256`.
+  The scan argument uses `1 ≤ R`, supplied by the headline setup.
+
+The headline requires only name distinctness, syntactic arena freshness,
+and the uniform schedule constant `2R + 3 ≤ q`; the word bound is then
+derived from `mcB q x` for every admissible input. All scratch conditions
+are array-length facts, with the member allocation taken at its actual
+level `cm j`. The global regroup costs `58·M + 120·N + 54` and reads
+only the emitted stream; it does not sort separately inside each row.
 
 ## The intermediate structure
 
@@ -5692,7 +5684,7 @@ private theorem peel_interval_exists {e : ℕ → ℕ} {N p : ℕ} (h0 : e 0 = 0
   rw [heq]
   exact hj
 
-private theorem peelOwner_at {e row : ℕ → ℕ} {N i p : ℕ}
+theorem peelOwner_at {e row : ℕ → ℕ} {N i p : ℕ}
     (hi : i < N) (hmono : ∀ i j, i ≤ j → j ≤ N → e i ≤ e j)
     (hlo : e i ≤ p) (hhi : p < e (i + 1)) : peelOwner e row N p = row i := by
   classical
@@ -5802,5 +5794,831 @@ theorem peelCOff_eq_mass {N : ℕ} {ρ : Equiv.Perm (Fin N)} {X : Fin N → Set 
   rw [hsum] at hwidth
   rw [← Equiv.sum_comp ρ (fun u => (X u).ncard)]
   exact hwidth
+
+end Lax3Proofs.Prog
+
+namespace Lax3Proofs.Prog
+open Lax67Proofs.Imp Lax67Proofs.Reasoning
+set_option linter.unusedSimpArgs false
+
+/-- Rows already encountered while scanning one inverse bucket. -/
+def peelSeen {N : ℕ} (iv : ℕ → ℕ) (b k : ℕ) : Set (Fin N) :=
+  {u | ∃ p, b ≤ p ∧ p < k ∧ iv p = u}
+
+@[simp] theorem peelSeen_empty {N : ℕ} (iv : ℕ → ℕ) (b : ℕ) :
+    peelSeen (N := N) iv b b = ∅ := by ext u; simp [peelSeen]; omega
+
+private theorem peelSeen_succ {N b k : ℕ} {iv : ℕ → ℕ} {u : Fin N}
+    (hb : b ≤ k) (hv : iv k = u) :
+    peelSeen iv b (k + 1) = insert u (peelSeen iv b k) := by
+  ext v
+  simp only [peelSeen, Set.mem_setOf_eq, Set.mem_insert_iff]
+  constructor
+  · rintro ⟨p, hp1, hp2, hp3⟩
+    by_cases hp : p = k
+    · left; exact Fin.ext (by subst p; omega)
+    · right; exact ⟨p, hp1, by omega, hp3⟩
+  · rintro (rfl | ⟨p, hp1, hp2, hp3⟩)
+    · exact ⟨k, hb, by omega, hv⟩
+    · exact ⟨p, hp1, by omega, hp3⟩
+
+private theorem peelSeen_fresh {N b k e : ℕ} {iv : ℕ → ℕ} {Y : Set (Fin N)}
+    (hs : SegAt iv b e Y) (hb : b ≤ k) (hk : k < e) {u : Fin N} (hu : iv k = u) :
+    u ∉ peelSeen iv b k := by
+  rintro ⟨p, hp1, hp2, hp3⟩
+  have := hs.2.2 p k hp1 (by omega) hb hk (hp3.trans hu.symm)
+  omega
+
+private theorem peelSeen_last {N b e : ℕ} {iv : ℕ → ℕ} {Y : Set (Fin N)}
+    (hs : SegAt iv b e Y) : peelSeen iv b e = Y := by
+  ext u
+  constructor
+  · rintro ⟨p, hp1, hp2, hp3⟩
+    obtain ⟨hv, hy⟩ := hs.1 p hp1 hp2
+    have hu : (⟨iv p, hv⟩ : Fin N) = u := Fin.ext hp3
+    rwa [hu] at hy
+  · intro hu; exact hs.2.1 u hu
+
+open Classical in
+/-- The sorted prefix of each row, with one extra member in already visited rows. -/
+noncomputable def PeelPlacePart {N : ℕ} (X : Fin N → Set (Fin N))
+    (off : ℕ → ℕ) (cm : String) (z : ℕ) (W : Set (Fin N)) (σ : Env) : Prop :=
+  (∀ u : Fin N, (σ.arrs plFl).getD u 0 = off u + cntBelow (X u) z + if u ∈ W then 1 else 0) ∧
+  (∀ (u : Fin N) (t : ℕ) (ht : t < (X u).ncard),
+    t < cntBelow (X u) z + (if u ∈ W then 1 else 0) →
+    (σ.arrs cm).getD (off u + t) 0 = (Impl.restrictEmb (X u) ⟨t, ht⟩ : ℕ))
+
+private theorem peel_row_slot_ne {N : ℕ} {X : Fin N → Set (Fin N)} {off : ℕ → ℕ}
+    (hm : ∀ i j, i ≤ j → j ≤ N → off i ≤ off j)
+    (hs : ∀ u : Fin N, off (u + 1) = off u + (X u).ncard)
+    {u v : Fin N} {s t : ℕ} (hsu : s < (X u).ncard) (htv : t < (X v).ncard)
+    (hne : u ≠ v) : off u + s ≠ off v + t := by
+  intro heq
+  have huv : (u : ℕ) ≠ (v : ℕ) := fun h => hne (Fin.ext h)
+  rcases lt_or_gt_of_ne huv with h | h
+  · have hle := hm (u + 1) v (by omega) (by omega)
+    rw [hs u] at hle
+    omega
+  · have hle := hm (v + 1) u (by omega) (by omega)
+    rw [hs v] at hle
+    omega
+
+/-- Appending the current member to one fresh row preserves the exact sorted enumeration. -/
+private theorem peelPlacePart_insert {N M : ℕ} {X : Fin N → Set (Fin N)}
+    {off : ℕ → ℕ} {cm : String} {z u : Fin N} {W : Set (Fin N)} {σ : Env}
+    (hcm : cm ≠ plFl) (hml : M ≤ (σ.arrs cm).length) (hfl : N ≤ (σ.arrs plFl).length)
+    (hm : ∀ i j, i ≤ j → j ≤ N → off i ≤ off j)
+    (hs : ∀ u : Fin N, off (u + 1) = off u + (X u).ncard) (hM : off N ≤ M)
+    (hzu : z ∈ X u) (huW : u ∉ W) (hp : PeelPlacePart X off cm z W σ) :
+    PeelPlacePart X off cm z (insert u W)
+      ((σ.setArr cm (off u + cntBelow (X u) z) z).setArr plFl u
+        (off u + cntBelow (X u) z + 1)) := by
+  classical
+  obtain ⟨hct, henum⟩ := restrictEmb_cntBelow_self (X u) hzu
+  have hslot : off u + cntBelow (X u) z < (σ.arrs cm).length := by
+    have hle := hm (u + 1) N (by omega) le_rfl
+    rw [hs u] at hle
+    omega
+  rcases hp with ⟨hfill, hmem⟩
+  refine ⟨?_, ?_⟩
+  · intro v
+    simp only [arrs_setArr, if_true, if_neg (Ne.symm hcm)]
+    rw [getD_set _ _ _ (by omega)]
+    by_cases hv : v = u
+    · subst v
+      simp [huW]
+    · have hvval : (v : ℕ) ≠ (u : ℕ) := fun h => hv (Fin.ext h)
+      rw [if_neg hvval, hfill v]
+      simp [hv]
+  · intro v t ht htp
+    simp only [arrs_setArr, if_neg hcm, if_true]
+    rw [getD_set _ _ _ hslot]
+    by_cases hv : v = u
+    · subst v
+      simp only [Set.mem_insert_iff, true_or, if_true] at htp
+      by_cases htct : t = cntBelow (X u) z
+      · subst t
+        rw [if_pos rfl]
+        exact (congrArg Fin.val henum).symm
+      · have htlt : t < cntBelow (X u) z := by omega
+        rw [if_neg (by omega)]
+        exact hmem u t ht (by simpa [huW] using htlt)
+    · have hslotne : off v + t ≠ off u + cntBelow (X u) z :=
+        peel_row_slot_ne hm hs ht hct hv
+      rw [if_neg hslotne]
+      exact hmem v t ht (by simpa [hv] using htp)
+
+private theorem peelPlacePart_next {N : ℕ} {X : Fin N → Set (Fin N)}
+    {off : ℕ → ℕ} {cm : String} {z : Fin N} {σ : Env}
+    (hp : PeelPlacePart X off cm z {u | z ∈ X u} σ) :
+    PeelPlacePart X off cm (z + 1) ∅ σ := by
+  classical
+  rcases hp with ⟨hfill, hmem⟩
+  refine ⟨?_, ?_⟩
+  · intro u
+    simpa [cntBelow_succ (X u) z z.isLt, Nat.add_assoc] using hfill u
+  · intro u t ht htp
+    exact hmem u t ht (by simpa [cntBelow_succ (X u) z z.isLt] using htp)
+
+/-- Immutable member-major input and the placement allocations. -/
+def PeelPlaceBase (cm : String) (N M : ℕ) (io iv : ℕ → ℕ) (σ : Env) : Prop :=
+  σ.vars "pl.n" = N ∧ N + 1 ≤ (σ.arrs plIo).length ∧ M ≤ (σ.arrs plIv).length ∧
+  N ≤ (σ.arrs plFl).length ∧ M ≤ (σ.arrs cm).length ∧
+  (∀ z, z ≤ N → (σ.arrs plIo).getD z 0 = io z) ∧
+  (∀ p, p < M → (σ.arrs plIv).getD p 0 = iv p)
+
+private theorem peelPlaceBase_setVar {cm x : String} {N M v : ℕ} {io iv : ℕ → ℕ} {σ : Env}
+    (h : PeelPlaceBase cm N M io iv σ) (hx : ("pl.n" : String) ≠ x) :
+    PeelPlaceBase cm N M io iv (σ.setVar x v) := by
+  simpa [PeelPlaceBase, hx] using h
+
+private theorem peelPlaceBase_setArr {cm a : String} {N M p v : ℕ} {io iv : ℕ → ℕ} {σ : Env}
+    (h : PeelPlaceBase cm N M io iv σ) (h1 : plIo ≠ a) (h2 : plIv ≠ a) :
+    PeelPlaceBase cm N M io iv (σ.setArr a p v) := by
+  simp only [PeelPlaceBase, length_arrs_setArr] at h ⊢
+  simpa only [vars_setArr, arrs_setArr, if_neg h1, if_neg h2] using h
+
+/-- Place one inverse bucket; every containing row receives the member once. -/
+theorem peelP7_inner_spec {B N M : ℕ} {X : Fin N → Set (Fin N)}
+    {io iv off : ℕ → ℕ} {cm : String} (z : Fin N)
+    (hNB : N + 1 < B) (hMB : M + 1 < B)
+    (hcfl : cm ≠ plFl) (hcio : cm ≠ plIo) (hciv : cm ≠ plIv)
+    (hio : io z ≤ io (z + 1)) (hioM : io (z + 1) ≤ M)
+    (hom : ∀ i j, i ≤ j → j ≤ N → off i ≤ off j)
+    (hostep : ∀ u : Fin N, off (u + 1) = off u + (X u).ncard) (hoM : off N ≤ M)
+    (hseg : SegAt iv (io z) (io (z + 1)) {u | z ∈ X u}) :
+    Spec B (fun σ => PeelPlaceBase cm N M io iv σ ∧
+        σ.vars "pl.z" = z ∧ σ.vars "pl.g" = io (z + 1) ∧ σ.vars "pl.k" = io z ∧
+        PeelPlacePart X off cm z ∅ σ)
+      (.while (.lt (.var "pl.k") (.var "pl.g"))
+        (.seq (.assign "pl.u" (.get plIv (.var "pl.k")))
+          (.seq (.store cm (.get plFl (.var "pl.u")) (.var "pl.z"))
+            (.seq (.store plFl (.var "pl.u")
+                (.add (.get plFl (.var "pl.u")) (.lit 1)))
+              (.assign "pl.k" (.add (.var "pl.k") (.lit 1)))))))
+      (fun _ σ' => PeelPlaceBase cm N M io iv σ' ∧ PeelPlacePart X off cm (z + 1) ∅ σ')
+      (21 * (io (z + 1) - io z) + 4) := by
+  classical
+  let I : Env → Prop := fun σ => PeelPlaceBase cm N M io iv σ ∧
+    σ.vars "pl.z" = z ∧ σ.vars "pl.g" = io (z + 1) ∧
+    io z ≤ σ.vars "pl.k" ∧ σ.vars "pl.k" ≤ io (z + 1) ∧
+    PeelPlacePart X off cm z (peelSeen iv (io z) (σ.vars "pl.k")) σ
+  have hbody : Spec B (fun σ => I σ ∧ σ.vars "pl.k" < io (z + 1))
+      (.seq (.assign "pl.u" (.get plIv (.var "pl.k")))
+        (.seq (.store cm (.get plFl (.var "pl.u")) (.var "pl.z"))
+          (.seq (.store plFl (.var "pl.u")
+              (.add (.get plFl (.var "pl.u")) (.lit 1)))
+            (.assign "pl.k" (.add (.var "pl.k") (.lit 1))))))
+      (fun σ σ' => I σ' ∧ σ'.vars "pl.k" = σ.vars "pl.k" + 1) 17 := by
+    rintro σ ⟨⟨hbase, hz, hg, hlo, hhi, hpart⟩, hklt⟩
+    obtain ⟨hn, hioL, hivL, hflL, hcmL, hiov, hivv⟩ := id hbase
+    have hkM : σ.vars "pl.k" < M := by omega
+    obtain ⟨huN, humem⟩ := hseg.1 (σ.vars "pl.k") hlo hklt
+    let u : Fin N := ⟨iv (σ.vars "pl.k"), huN⟩
+    have huval : iv (σ.vars "pl.k") = (u : ℕ) := rfl
+    have huW : u ∉ peelSeen iv (io z) (σ.vars "pl.k") := peelSeen_fresh hseg hlo hklt huval
+    have hzu : z ∈ X u := humem
+    obtain ⟨hct, henum⟩ := restrictEmb_cntBelow_self (X u) hzu
+    have hrk : (σ.arrs plIv).getD (σ.vars "pl.k") 0 = u := (hivv _ hkM).trans huval
+    have hcur : (σ.arrs plFl).getD ((σ.arrs plIv).getD (σ.vars "pl.k") 0) 0
+        = off u + cntBelow (X u) z := by
+      rw [hrk, hpart.1 u, if_neg huW]
+      omega
+    have hslot : off u + cntBelow (X u) z < M := by
+      have hle := hom (u + 1) N (by omega) le_rfl
+      rw [hostep u] at hle
+      omega
+    run_vcg
+    dsimp only [I]
+    simp only [vars_setVar, vars_setArr, arrs_setVar]
+    simp only [show ("pl.z" : String) ≠ "pl.k" by decide,
+      show ("pl.z" : String) ≠ "pl.u" by decide,
+      show ("pl.g" : String) ≠ "pl.k" by decide,
+      show ("pl.g" : String) ≠ "pl.u" by decide,
+      show ("pl.k" : String) ≠ "pl.u" by decide, if_false, if_true]
+    refine ⟨⟨?_, hz, hg, by omega, by omega, ?_⟩, by trivial⟩
+    · apply peelPlaceBase_setVar _ (by decide)
+      apply peelPlaceBase_setArr _ (by decide) (by decide)
+      apply peelPlaceBase_setArr _ (Ne.symm hcio) (Ne.symm hciv)
+      exact peelPlaceBase_setVar hbase (by decide)
+    · rw [peelSeen_succ hlo huval]
+      have hpU : PeelPlacePart X off cm z (peelSeen iv (io z) (σ.vars "pl.k"))
+          (σ.setVar "pl.u" ((σ.arrs plIv).getD (σ.vars "pl.k") 0)) := by
+        simpa [PeelPlacePart] using hpart
+      have hpIns := peelPlacePart_insert hcfl hcmL hflL hom hostep hoM hzu huW hpU
+      simp only [PeelPlacePart, vars_setVar, vars_setArr, arrs_setVar, arrs_setArr,
+        if_true, if_neg hcfl, if_neg (Ne.symm hcfl),
+        show ("pl.z" : String) ≠ "pl.u" by decide, if_false,
+        show ("pl.k" : String) ≠ "pl.u" by decide] at hpIns ⊢
+      rw [hcur, hrk, hz]
+      exact hpIns
+    all_goals simp [hcfl, Ne.symm hcfl] <;>
+      simp only [← List.getD_eq_getElem?_getD] <;> omega
+  refine (Spec.forRange "pl.k" "pl.g" I (io (z + 1)) 17
+    (21 * (io (z + 1) - io z) + 4)
+    (fun _ h => by have := h.2.2.2.2.1; omega)
+    (fun _ h => by rw [h.2.2.1]; omega)
+    (fun _ h => h.2.2.1) (fun _ h => h.2.2.2.2.1) hbody ?_ ?_).post ?_
+  · rintro σ ⟨hb, hz, hg, hk, hp⟩
+    exact ⟨hb, hz, hg, by omega, by omega, by simpa [hk] using hp⟩
+  · rintro σ ⟨_, _, _, hk, _⟩; rw [hk]
+  · rintro σ σ' _ ⟨hI, hk⟩
+    refine ⟨hI.1, peelPlacePart_next ?_⟩
+    simpa [hk, peelSeen_last hseg] using hI.2.2.2.2.2
+
+private theorem peelP7_sum_widths {N : ℕ} {e : ℕ → ℕ} (h0 : e 0 = 0)
+    (he : ∀ i, i < N → e i ≤ e (i + 1)) :
+    ∑ i ∈ Finset.range N, (e (i + 1) - e i) = e N := by
+  induction N with
+  | zero => simpa using h0.symm
+  | succ N ih =>
+    rw [Finset.sum_range_succ, ih (fun i hi => he i (by omega))]
+    exact Nat.add_sub_of_le (he N (by omega))
+
+/-- Regroup pass 7 places buckets in ascending member order, hence in `restrictEmb` order. -/
+theorem peelP7B_spec {B N M : ℕ} {X : Fin N → Set (Fin N)}
+    {io iv off : ℕ → ℕ} {cm : String}
+    (hNB : N + 1 < B) (hMB : M + 1 < B)
+    (hcfl : cm ≠ plFl) (hcio : cm ≠ plIo) (hciv : cm ≠ plIv)
+    (hio0 : io 0 = 0) (hioN : io N = M)
+    (hiom : ∀ i j, i ≤ j → j ≤ N → io i ≤ io j)
+    (hom : ∀ i j, i ≤ j → j ≤ N → off i ≤ off j)
+    (hostep : ∀ u : Fin N, off (u + 1) = off u + (X u).ncard) (hoM : off N ≤ M)
+    (hseg : ∀ z : Fin N, SegAt iv (io z) (io (z + 1)) {u | z ∈ X u}) :
+    Spec B (fun σ => PeelPlaceBase cm N M io iv σ ∧ ∀ u : Fin N, (σ.arrs plFl).getD u 0 = off u)
+      (peelP7B cm)
+      (fun _ σ' => ∀ (u : Fin N) (t : ℕ) (ht : t < (X u).ncard),
+        (σ'.arrs cm).getD (off u + t) 0 = (Impl.restrictEmb (X u) ⟨t, ht⟩ : ℕ))
+      (21 * M + 20 * N + 6) := by
+  classical
+  let I : Env → Prop := fun σ => PeelPlaceBase cm N M io iv σ ∧
+    σ.vars "pl.z" ≤ N ∧ PeelPlacePart X off cm (σ.vars "pl.z") ∅ σ
+  let K : ℕ → ℕ := fun z => 21 * (io (z + 1) - io z) + 16
+  have hstep : ∀ z, z < N → Spec B (fun σ => I σ ∧ σ.vars "pl.z" = z)
+      (.seq (.assign "pl.k" (.get plIo (.var "pl.z")))
+        (.seq (.assign "pl.g" (.get plIo (.add (.var "pl.z") (.lit 1))))
+          (.seq
+            (.while (.lt (.var "pl.k") (.var "pl.g"))
+              (.seq (.assign "pl.u" (.get plIv (.var "pl.k")))
+                (.seq (.store cm (.get plFl (.var "pl.u")) (.var "pl.z"))
+                  (.seq (.store plFl (.var "pl.u")
+                      (.add (.get plFl (.var "pl.u")) (.lit 1)))
+                    (.assign "pl.k" (.add (.var "pl.k") (.lit 1)))))))
+            (.assign "pl.z" (.add (.var "pl.z") (.lit 1))))))
+      (fun _ σ' => I σ' ∧ σ'.vars "pl.z" = z + 1) (K z) := by
+    intro z hz
+    rintro σ ⟨⟨hb, _, hp⟩, hvz⟩
+    have hzio : io z ≤ io (z + 1) := hiom _ _ (by omega) (by omega)
+    have hzM : io (z + 1) ≤ M := by rw [← hioN]; exact hiom _ _ (by omega) le_rfl
+    obtain ⟨hn, hioL, hivL, hflL, hcmL, hiov, hivv⟩ := id hb
+    let σ1 := σ.setVar "pl.k" (io z)
+    let σ2 := σ1.setVar "pl.g" (io (z + 1))
+    have hkRun : Run B (.assign "pl.k" (.get plIo (.var "pl.z"))) σ σ1 3 := by
+      have hev := RunStep.eval_get B σ plIo (.var "pl.z") z
+        (by simpa [hvz] using (evalB_var (B := B) (x := "pl.z") (σ := σ) (by omega)))
+        (by omega) (by rw [hiov z (by omega)]; omega)
+      simpa only [σ1, hiov z (by omega), Expr.size] using Run.assign (x := "pl.k") hev
+    have hgRun : Run B (.assign "pl.g" (.get plIo (.add (.var "pl.z") (.lit 1)))) σ1 σ2 5 := by
+      have hevi : (Expr.add (.var "pl.z") (.lit 1)).evalB B σ1 = some (z + 1) := by
+        have h := evalB_bin (B := B) (σ := σ1) (op := .add)
+          (e := Expr.var "pl.z") (f := Expr.lit 1)
+          (evalB_var (by simp [σ1, hvz]; omega)) (evalB_lit (by omega))
+          (by simp [σ1, hvz]; omega)
+        simpa [σ1, hvz] using h
+      have hev := RunStep.eval_get B σ1 plIo (.add (.var "pl.z") (.lit 1)) (z + 1)
+        hevi (by simp [σ1]; omega)
+        (by change (σ.arrs plIo).getD (z + 1) 0 < B; rw [hiov (z + 1) (by omega)]; omega)
+      simpa only [σ2, σ1, arrs_setVar, hiov (z + 1) (by omega), Expr.size] using Run.assign (x := "pl.g") hev
+    obtain ⟨σ3, hir, hb3, hp3⟩ := (peelP7_inner_spec ⟨z, hz⟩ hNB hMB hcfl hcio hciv hzio hzM
+      hom hostep hoM (hseg ⟨z, hz⟩)).run (σ := σ2) (by
+        refine ⟨peelPlaceBase_setVar (peelPlaceBase_setVar hb (by decide)) (by decide),
+          by simp [σ2, σ1, hvz], by simp [σ2], by simp [σ2, σ1], ?_⟩
+        simpa [PeelPlacePart, σ2, σ1, hvz] using hp)
+    have hz3 : σ3.vars "pl.z" = z := by
+      rw [hir.frame_var "pl.z" (by simp [Com.wvars])]
+      simp [σ2, σ1, hvz]
+    have hinc : Run B (.assign "pl.z" (.add (.var "pl.z") (.lit 1))) σ3
+        (σ3.setVar "pl.z" (z + 1)) 4 := by
+      have h := evalB_bin (B := B) (σ := σ3) (op := .add)
+        (e := Expr.var "pl.z") (f := Expr.lit 1)
+        (evalB_var (by omega)) (evalB_lit (by omega))
+        (by simp only [Bop.apply_add]; omega)
+      have hev : (Expr.add (.var "pl.z") (.lit 1)).evalB B σ3 = some (z + 1) := by simpa [hz3] using h
+      exact Run.assign hev
+    refine ⟨_, (hkRun.seq (hgRun.seq (hir.seq hinc))).mono (by dsimp [K]; omega), ?_, by simp⟩
+    refine ⟨peelPlaceBase_setVar hb3 (by decide), by simp; omega, ?_⟩
+    simpa [PeelPlacePart] using hp3
+  have hloop := peel_forRangeSum "pl.z" "pl.n" I K (by omega)
+    (fun _ h => ⟨h.1.1, h.2.1⟩) hstep
+  rintro σ ⟨hb, hfill⟩
+  have hinit : Run B (.assign "pl.z" (.lit 0)) σ (σ.setVar "pl.z" 0) 2 := Run.assign (evalB_lit (by omega))
+  obtain ⟨σ', hr, hI, hz⟩ := hloop.run (σ := σ.setVar "pl.z" 0) (by
+    refine ⟨⟨peelPlaceBase_setVar hb (by decide), by simp, ?_⟩, by simp⟩
+    simpa [PeelPlacePart, cntBelow] using hfill)
+  have hsum : (∑ z ∈ Finset.range N, (K z + 4)) = 21 * M + 20 * N := by
+    have hwidth := peelP7_sum_widths (N := N) hio0 (fun z hz => hiom z (z + 1) (by omega) (by omega))
+    rw [hioN] at hwidth
+    have ht : ∀ z, K z + 4 = 21 * (io (z + 1) - io z) + 20 := by intro z; dsimp [K]
+    simp_rw [ht]
+    rw [Finset.sum_add_distrib, ← Finset.mul_sum, hwidth]
+    simp [Nat.mul_comm]
+  refine ⟨σ', (hinit.seq hr).mono (by rw [hsum]; omega), ?_⟩
+  intro u t ht
+  exact hI.2.2.2 u t ht (by simpa [hz, cntBelow_of_ge (X u) le_rfl] using ht)
+
+end Lax3Proofs.Prog
+
+namespace Lax3Proofs.Prog
+open Lax3Proofs.Impl Lax12.ColoringNumbers
+open Classical
+
+private theorem sum_internal_degree_le_twice_dlt {N : ℕ}
+    (G : SimpleGraph (Fin N)) (π : Equiv.Perm (Fin N))
+    (T : Finset (Fin N)) :
+    (∑ x ∈ T, (G.neighborFinset x ∩ T).card) ≤
+      2 * ∑ x ∈ T, dlt G π x := by
+  classical
+  let f : Fin N → Fin N → ℕ := fun x y =>
+    if G.Adj x y ∧ π y < π x then 1 else 0
+  have hsplit (x y : Fin N) :
+      (if G.Adj x y then 1 else 0) = f x y + f y x := by
+    by_cases hxy : G.Adj x y
+    · have hne : π x ≠ π y := fun h => hxy.ne (π.injective h)
+      rcases lt_or_gt_of_ne hne with hlt | hgt
+      · simp [f, hxy, hxy.symm, hlt, not_lt_of_gt hlt]
+      · simp [f, hxy, hxy.symm, hgt, not_lt_of_gt hgt]
+    · have hyx : ¬ G.Adj y x := fun h => hxy h.symm
+      simp [f, hxy, hyx]
+  have hcard (x : Fin N) :
+      (G.neighborFinset x ∩ T).card =
+        ∑ y ∈ T, (if G.Adj x y then 1 else 0) := by
+    rw [Finset.sum_boole]
+    congr 1
+    ext y
+    simp [and_comm]
+  have hlow (x : Fin N) : (∑ y ∈ T, f x y) ≤ dlt G π x := by
+    dsimp [f]
+    rw [Finset.sum_boole]
+    apply Finset.card_le_card
+    intro y hy
+    have h := (Finset.mem_filter.mp hy).2
+    simpa [Nlt, SimpleGraph.mem_neighborFinset] using h
+  have hswap : (∑ x ∈ T, ∑ y ∈ T, f y x) = ∑ x ∈ T, ∑ y ∈ T, f x y :=
+    Finset.sum_comm
+  calc
+    (∑ x ∈ T, (G.neighborFinset x ∩ T).card)
+        = ∑ x ∈ T, ∑ y ∈ T, (f x y + f y x) := by
+          simp_rw [hcard, hsplit]
+    _ = 2 * ∑ x ∈ T, ∑ y ∈ T, f x y := by
+      simp_rw [Finset.sum_add_distrib]
+      rw [hswap]
+      omega
+    _ ≤ 2 * ∑ x ∈ T, dlt G π x :=
+      Nat.mul_le_mul_left 2 (Finset.sum_le_sum fun x _ => hlow x)
+
+/-- A scan whose vertices and all their live neighbours lie in `T` costs
+at most twice the sum of backward degrees in `T`. -/
+theorem sum_scanned_degree_le {N : ℕ} (G H : SimpleGraph (Fin N))
+    (π : Equiv.Perm (Fin N)) (S T : Finset (Fin N))
+    (hHG : H ≤ G) (hST : S ⊆ T)
+    (hclosed : ∀ x ∈ S, ∀ y, H.Adj x y → y ∈ T) :
+    (∑ x ∈ S, (H.neighborSet x).ncard) ≤ 2 * ∑ x ∈ T, dlt G π x := by
+  classical
+  have hdeg (x : Fin N) (hx : x ∈ S) :
+      (H.neighborSet x).ncard ≤ (G.neighborFinset x ∩ T).card := by
+    rw [← H.coe_neighborFinset x, Set.ncard_coe_finset]
+    apply Finset.card_le_card
+    intro y hy
+    have hxy : H.Adj x y := by simpa using hy
+    exact Finset.mem_inter.mpr ⟨by simpa using hHG hxy,
+      hclosed x hx y hxy⟩
+  exact (Finset.sum_le_sum hdeg).trans
+    ((Finset.sum_le_sum_of_subset hST).trans
+      (sum_internal_degree_le_twice_dlt G π T))
+
+end Lax3Proofs.Prog
+
+namespace Lax3Proofs.Prog
+open Classical Lax3Proofs.Impl Lax12.ColoringNumbers
+open Lax3Proofs.WalkDistance Lax3.ColoredGraphs
+open Lax12.UniformQuasiWideness (deleteVerts)
+
+theorem peelDeg_le_mass {N : ℕ} (G : SimpleGraph (Fin N))
+    (π : Equiv.Perm (Fin N)) (R : ℕ) (hr : 1 ≤ R)
+    {D : ℕ} (hD : ∀ x, (wreach G π (2 * R) x).ncard ≤ D) (i : ℕ) :
+    peelDeg G π R i ≤ 2 * (pfibR G π R i).ncard * D := by
+  by_cases hi : i < N
+  · rw [peelDeg, dif_pos hi, pfibR_eq G π R hi]
+    let H := deleteVerts G (peelSet π i)
+    let u : Fin N := π.symm ⟨i, hi⟩
+    have hfib : pfib G π R u = ball H (2 * R) u := by
+      rw [pfib_eq_ball]
+      simp only [u, Equiv.apply_symm_apply]
+      rfl
+    change (∑ z ∈ (Set.toFinite (ball H (2 * R - 1) u)).toFinset,
+      (H.neighborSet z).ncard) ≤ 2 * (pfib G π R u).ncard * D
+    rw [hfib]
+    let S := (Set.toFinite (ball H (2 * R - 1) u)).toFinset
+    let T := (Set.toFinite (ball H (2 * R) u)).toFinset
+    have hST : S ⊆ T := by
+      intro x hx
+      have hx' : x ∈ ball H (2 * R - 1) u := by simpa [S] using hx
+      have ht := ball_mono_radius H u (show 2 * R - 1 ≤ 2 * R by omega) hx'
+      simpa [T] using ht
+    have hclosed : ∀ x ∈ S, ∀ y, H.Adj x y → y ∈ T := by
+      intro x hx y hxy
+      have hx' : WithinDist H (2 * R - 1) u x := by simpa [S, mem_ball] using hx
+      have hy := withinDist_mono_radius (show 2 * R - 1 + 1 ≤ 2 * R by omega)
+        (withinDist_trans hx' (withinDist_of_adj hxy))
+      simpa [T, mem_ball] using hy
+    have hs := sum_scanned_degree_le G H π S T (deleteVerts_le _ _) hST hclosed
+    have ht := Impl.sum_dlt_le (G := G) (π := π) (by omega : 1 ≤ 2 * R) hD T
+    calc
+      _ ≤ 2 * ∑ x ∈ T, dlt G π x := hs
+      _ ≤ 2 * (T.card * D) := Nat.mul_le_mul_left 2 ht
+      _ = 2 * (ball H (2 * R) u).ncard * D := by
+        rw [Set.ncard_eq_toFinset_card (ball H (2 * R) u)]
+        exact (Nat.mul_assoc _ _ _).symm
+  · simp [peelDeg, pfibR, hi]
+
+theorem mval_eq_sum_fib {N : ℕ} (G : SimpleGraph (Fin N))
+    (π : Equiv.Perm (Fin N)) (R : ℕ) :
+    mval G π R N = ∑ u : Fin N, (pfib G π R u).ncard := by
+  rw [mval, ← Fin.sum_univ_eq_sum_range]
+  simp_rw [pfibR_eq G π R (Fin.isLt _)]
+  exact π.symm.sum_comp (fun u => (pfib G π R u).ncard)
+
+theorem mval_mul_le_sweepCharge {N : ℕ} (G : SimpleGraph (Fin N))
+    (π : Equiv.Perm (Fin N)) (R D : ℕ) :
+    mval G π R N * D ≤ sweepCharge G π R D := by
+  rw [mval_eq_sum_fib, Finset.sum_mul, sweepCharge]
+  apply Finset.sum_le_sum
+  intro u _
+  rw [sweepCluster_eq_fiber]
+  exact Nat.le_add_right _ _
+
+theorem sum_peelDeg_le_sweepCharge {N : ℕ} (G : SimpleGraph (Fin N))
+    (π : Equiv.Perm (Fin N)) (R : ℕ) (hr : 1 ≤ R)
+    {D : ℕ} (hD : ∀ x, (wreach G π (2 * R) x).ncard ≤ D) :
+    (∑ i ∈ Finset.range N, peelDeg G π R i) ≤ 2 * sweepCharge G π R D := by
+  calc
+    _ ≤ ∑ i ∈ Finset.range N, 2 * (pfibR G π R i).ncard * D :=
+      Finset.sum_le_sum fun i _ => peelDeg_le_mass G π R hr hD i
+    _ = 2 * (mval G π R N * D) := by
+      simp_rw [Nat.mul_assoc]
+      rw [← Finset.mul_sum, ← Finset.sum_mul]
+      rfl
+    _ ≤ _ := Nat.mul_le_mul_left 2 (mval_mul_le_sweepCharge G π R D)
+
+theorem mval_le_sweepCharge {N : ℕ} (G : SimpleGraph (Fin N))
+    (π : Equiv.Perm (Fin N)) (R : ℕ)
+    {D : ℕ} (hD : ∀ x, (wreach G π (2 * R) x).ncard ≤ D) :
+    mval G π R N ≤ sweepCharge G π R D := by
+  by_cases hn : 0 < N
+  · let u : Fin N := ⟨0, hn⟩
+    have hp : 0 < (wreach G π (2 * R) u).ncard :=
+      (Set.ncard_pos (Set.toFinite _)).mpr ⟨u, self_mem_pfib G π R u⟩
+    have hd : 1 ≤ D := lt_of_lt_of_le hp (hD u)
+    exact (Nat.le_mul_of_pos_right _ hd).trans (mval_mul_le_sweepCharge G π R D)
+  · have hN : N = 0 := by omega
+    subst N
+    simp [mval_zero]
+
+theorem n_le_mval {N : ℕ} (G : SimpleGraph (Fin N))
+    (π : Equiv.Perm (Fin N)) (R : ℕ) : N ≤ mval G π R N := by
+  rw [mval_eq_sum_fib]
+  calc
+    N = ∑ _u : Fin N, 1 := by simp
+    _ ≤ _ := Finset.sum_le_sum fun u _ =>
+      (Set.ncard_pos (Set.toFinite _)).mpr ⟨u, self_mem_pfib G π R u⟩
+
+theorem peelK_le_sweepCharge {N : ℕ} (G : SimpleGraph (Fin N))
+    (π : Equiv.Perm (Fin N)) (R : ℕ) (hr : 1 ≤ R)
+    {D : ℕ} (hD : ∀ x, (wreach G π (2 * R) x).ncard ≤ D) :
+    peelK G π R ≤ 640 * sweepCharge G π R D + 256 * N + 256 := by
+  have he := sum_peelDeg_le_sweepCharge G π R hr hD
+  have hm := mval_le_sweepCharge G π R hD
+  have hn := (n_le_mval G π R).trans hm
+  simp only [peelK, stepK, Finset.sum_add_distrib, ← Finset.mul_sum,
+    Finset.sum_const, Finset.card_range, smul_eq_mul]
+  change 64 * (∑ i ∈ Finset.range N, peelDeg G π R i) +
+    256 * mval G π R N + N * 256 + 256 * N + 256 ≤ _
+  omega
+
+end Lax3Proofs.Prog
+
+
+namespace Lax3Proofs.Prog
+open Lax67Proofs.Imp Lax67Proofs.Reasoning
+set_option linter.unusedSimpArgs false
+
+/-- The global counting regroup, separated from the peeling sweep. -/
+def peelRegroupB (co cm ra od : String) : Com :=
+  .seq peelP1B (.seq peelP2B (.seq peelP3B (.seq peelP3bB
+    (.seq (peelP4B od) (.seq (peelP5B co ra) (.seq (peelP6B co) (peelP7B cm)))))))
+
+private theorem peelScBase_of_run {B K N M : ℕ} {od : String} {e row f : ℕ → ℕ}
+    {c : Com} {σ σ' : Env} (hb : PeelScBase od N M e row f σ) (hr : Run B c σ σ' K)
+    (hn : "pl.n" ∉ c.wvars) (hod : od ∉ c.warrs) (hre : plRe ∉ c.warrs)
+    (hrw : plRw ∉ c.warrs) : PeelScBase od N M e row f σ' := by
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hb
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  · rwa [hr.frame_var "pl.n" hn]
+  · rwa [run_arrs_length_eq hr]
+  · rwa [run_arrs_length_eq hr]
+  · rwa [run_arrs_length_eq hr]
+  · rwa [run_arrs_length_eq hr]
+  · rwa [run_arrs_length_eq hr]
+  · intro i hi; rw [hr.frame_arr od hod]; exact h7 i hi
+  · intro i hi; rw [hr.frame_arr plRe hre]; exact h8 i hi
+  · intro p hp; rw [hr.frame_arr plRw hrw]; exact h9 p hp
+
+/-- Global counting regroup, from arbitrary duplicate-free source segments to the exact sorted CSR. -/
+theorem peelRegroupB_spec {B N M : ℕ} {co cm ra od : String}
+    {ρ : Equiv.Perm (Fin N)} {e f : ℕ → ℕ} {X : Fin N → Set (Fin N)}
+    (hNB : N + 1 < B) (hMB : M + 1 < B)
+    (hd : ([co, cm, ra, od] ++ plArrNames).Nodup)
+    (he0 : e 0 = 0) (heN : e N = M)
+    (hem : ∀ i j, i ≤ j → j ≤ N → e i ≤ e j)
+    (hseg : ∀ i, (hi : i < N) → SegAt f (e i) (e (i + 1)) (X (ρ ⟨i, hi⟩))) :
+    Spec B (fun σ => PeelScBase od N M e (peelRow ρ) f σ ∧ σ.vars "pl.m" = M ∧
+        RankArr ra ρ.symm σ ∧ N ≤ (σ.arrs plDz).length ∧
+        N + 1 ≤ (σ.arrs plIo).length ∧ N ≤ (σ.arrs plFl).length ∧
+        N + 1 ≤ (σ.arrs co).length ∧ M ≤ (σ.arrs cm).length)
+      (peelRegroupB co cm ra od) (fun _ σ' => ClusterCsr co cm X σ')
+      (58 * M + 120 * N + 54) := by
+  classical
+  obtain ⟨hnd, _, hdis⟩ := List.nodup_append.mp hd
+  have hcf : ∀ a ∈ plArrNames, co ≠ a := fun a ha => hdis co (by simp) a ha
+  have hmf : ∀ a ∈ plArrNames, cm ≠ a := fun a ha => hdis cm (by simp) a ha
+  have hrf : ∀ a ∈ plArrNames, ra ≠ a := fun a ha => hdis ra (by simp) a ha
+  have hof : ∀ a ∈ plArrNames, od ≠ a := fun a ha => hdis od (by simp) a ha
+  have hc_ra : co ≠ ra := by
+    have h := hnd
+    simp only [List.nodup_cons, List.mem_cons, List.not_mem_nil, not_or,
+      not_false_eq_true, and_true, List.nodup_nil] at h
+    tauto
+  have hc_cm : co ≠ cm := by
+    have h := hnd
+    simp only [List.nodup_cons, List.mem_cons, List.not_mem_nil, not_or,
+      not_false_eq_true, and_true, List.nodup_nil] at h
+    tauto
+  obtain ⟨hf, hownN, hsource, hcomplete, hpair⟩ := peel_source_of_segments he0 heN hem hseg
+  let own := peelOwner e (peelRow ρ) N
+  let io := peelIOff f M
+  let off := peelCOff X
+  have heStep : ∀ i, (hi : i < N) → e (i + 1) = e i + (X (ρ ⟨i, hi⟩)).ncard := by
+    intro i hi
+    have h := (hseg i hi).card
+    have hle := hem i (i + 1) (by omega) (by omega)
+    omega
+  have hoffN : off N = M := (peelCOff_eq_mass he0 heStep).trans heN
+  have hoffM : ∀ i, i ≤ N → off i ≤ M := by
+    intro i hi
+    exact (peelCOff_mono X hi).trans_eq hoffN
+  have hioM : ∀ z, z ≤ N → io z ≤ M := fun z hz => peelIOff_le hf hz
+  have hrowN : ∀ i, i < N → peelRow ρ i < N := by intro i hi; rw [peelRow_eq ρ hi]; exact (ρ ⟨i, hi⟩).isLt
+  rintro σ ⟨hbase, hm, hrank, hdzL, hioL, hflL, hcoL, hcmL⟩
+  obtain ⟨σ1, hr1, hzero⟩ := (peelP1B_spec (B := B) (N := N) (by omega)).run ⟨hbase.1, hdzL⟩
+  have h1rw : σ1.arrs plRw = σ.arrs plRw := hr1.frame_arr plRw (by simp [peelP1B, Com.warrs, plRw, plDz])
+  obtain ⟨σ2, hr2, hcounts⟩ := (peelP2B_spec (by omega) hMB hf).run
+    ⟨by rw [hr1.frame_var "pl.m" (by simp [peelP1B, Com.wvars])]; exact hm,
+      by rw [run_arrs_length_eq hr1]; exact hdzL,
+      by rw [h1rw]; exact hbase.2.2.2.1,
+      by intro p hp; rw [h1rw]; exact hbase.2.2.2.2.2.2.2.2 p hp, hzero⟩
+  have hr12 := hr1.seq hr2
+  obtain ⟨σ3, hr3, hio3⟩ := (peelP3B_spec hNB hMB hf).run
+    ⟨by rw [hr12.frame_var "pl.n" (by simp [peelP1B, peelP2B, Com.wvars])]; exact hbase.1,
+      by rw [run_arrs_length_eq hr12]; exact hdzL,
+      by rw [run_arrs_length_eq hr12]; exact hioL, hcounts⟩
+  have hr123 := hr1.seq (hr2.seq hr3)
+  obtain ⟨σ3b, hr3b, hcu3⟩ := (peel_copy_spec (B := B) (N := N) (src := plIo) (dst := plCu) (v := io)
+    (by omega) (by decide) (fun z hz => lt_of_le_of_lt (hioM z (by omega)) (by omega))).run
+    ⟨by rw [hr123.frame_var "pl.n" (by simp [peelP1B, peelP2B, peelP3B, Com.wvars])]; exact hbase.1,
+      by rw [run_arrs_length_eq hr123]; omega,
+      by rw [run_arrs_length_eq hr123]; exact hbase.2.2.2.2.1,
+      fun z hz => hio3 z (by omega)⟩
+  have hrpre := hr1.seq (hr2.seq (hr3.seq hr3b))
+  have hb3 : PeelScBase od N M e (peelRow ρ) f σ3b :=
+    peelScBase_of_run hbase hrpre (by simp [peelP1B, peelP2B, peelP3B, Com.wvars])
+      (by simp [peelP1B, peelP2B, peelP3B, Com.warrs,
+        hof plDz (by simp [plArrNames]), hof plIo (by simp [plArrNames]), hof plCu (by simp [plArrNames])])
+      (by simp [peelP1B, peelP2B, peelP3B, Com.warrs, plRe, plDz, plIo, plCu])
+      (by simp [peelP1B, peelP2B, peelP3B, Com.warrs, plRw, plDz, plIo, plCu])
+  obtain ⟨σ4, hr4, hscattered⟩ := (peelP4B_spec hNB hMB (hof plIv (by simp [plArrNames]))
+    (hof plCu (by simp [plArrNames])) he0 heN hem hrowN hf
+    (fun i hi p hp1 hp2 => peelOwner_at hi hem hp1 hp2)).run
+    ⟨hb3, by simpa [PeelScPart] using hcu3⟩
+  have hrpre4 := hr1.seq (hr2.seq (hr3.seq (hr3b.seq hr4)))
+  have hkeep4 : ∀ a, a ≠ plDz → a ≠ plIo → a ≠ plCu → a ≠ plIv → σ4.arrs a = σ.arrs a := by
+    intro a h1 h2 h3 h4
+    exact hrpre4.frame_arr a (by simp [peelP1B, peelP2B, peelP3B, peelP4B, Com.warrs, h1, h2, h3, h4])
+  have hrank4 : RankArr ra ρ.symm σ4 := rankArr_of_eq hrank
+    (hkeep4 ra (hrf plDz (by simp [plArrNames])) (hrf plIo (by simp [plArrNames]))
+      (hrf plCu (by simp [plArrNames])) (hrf plIv (by simp [plArrNames])))
+  have hre4 : σ4.arrs plRe = σ.arrs plRe := hkeep4 plRe (by decide) (by decide) (by decide) (by decide)
+  have hio4 : ∀ z, z ≤ N → (σ4.arrs plIo).getD z 0 = io z := by
+    intro z hz
+    rw [(hr3b.seq hr4).frame_arr plIo (by simp [peelP4B, Com.warrs, plIo, plCu, plIv])]
+    exact hio3 z hz
+  let iv : ℕ → ℕ := fun p => (σ4.arrs plIv).getD p 0
+  have hInvSeg : ∀ z : Fin N, SegAt iv (io z) (io (z + 1)) {u | z ∈ X u} := by
+    intro z
+    apply peel_transpose_segments hf hownN _ hcomplete hpair hscattered.2 z
+    intro p hp
+    obtain ⟨hv, hu, hs⟩ := hsource p hp
+    exact hs
+  have hP5step : ∀ i, i < N → off (i + 1) = off i + (e (peelRow ρ.symm i + 1) - e (peelRow ρ.symm i)) := by
+    intro i hi
+    rw [peelRow_eq ρ.symm hi, heStep (ρ.symm ⟨i, hi⟩) (ρ.symm ⟨i, hi⟩).isLt]
+    simpa [off] using peelCOff_succ X ⟨i, hi⟩
+  obtain ⟨σ5, hr5, hco5⟩ := (peelP5B_spec (e := e) (rk := peelRow ρ.symm) (o := off)
+    hNB hMB (Ne.symm hc_ra) (Ne.symm (hcf plRe (by simp [plArrNames])))
+    (fun i hi => by rw [peelRow_eq ρ.symm hi]; exact (ρ.symm ⟨i, hi⟩).isLt)
+    (fun i hi => (hem i N hi le_rfl).trans_eq heN) hoffM (peelCOff_zero X) hP5step).run
+    ⟨by rw [hrpre4.frame_var "pl.n" (by simp [peelP1B, peelP2B, peelP3B, peelP4B, Com.wvars])]; exact hbase.1,
+      hrank4.1, by rw [hre4]; exact hbase.2.2.1,
+      by rw [run_arrs_length_eq hrpre4]; exact hcoL,
+      fun i hi => by rw [peelRow_eq ρ.symm hi]; exact hrank4.2 ⟨i, hi⟩,
+      fun i hi => by rw [hre4]; exact hbase.2.2.2.2.2.2.2.1 i hi⟩
+  have hrpre5 := hr1.seq (hr2.seq (hr3.seq (hr3b.seq (hr4.seq hr5))))
+  obtain ⟨σ6, hr6, hfl6⟩ := (peel_copy_spec (B := B) (N := N) (src := co) (dst := plFl) (v := off)
+    (by omega) (hcf plFl (by simp [plArrNames]))
+    (fun u hu => lt_of_le_of_lt (hoffM u (by omega)) (by omega))).run
+    ⟨by rw [hrpre5.frame_var "pl.n" (by simp [peelP1B, peelP2B, peelP3B, peelP4B, peelP5B, Com.wvars])]; exact hbase.1,
+      by rw [run_arrs_length_eq hrpre5]; omega,
+      by rw [run_arrs_length_eq hrpre5]; exact hflL,
+      fun u hu => hco5 u (by omega)⟩
+  have hrpre6 := hr1.seq (hr2.seq (hr3.seq (hr3b.seq (hr4.seq (hr5.seq hr6)))))
+  have hio6 : ∀ z, z ≤ N → (σ6.arrs plIo).getD z 0 = io z := by
+    intro z hz
+    rw [(hr5.seq hr6).frame_arr plIo (by simp [peelP5B, Com.warrs,
+      Ne.symm (hcf plIo (by simp [plArrNames])), (show plIo ≠ plFl by decide)])]
+    exact hio4 z hz
+  have hiv6 : ∀ p, p < M → (σ6.arrs plIv).getD p 0 = iv p := by
+    intro p hp
+    rw [(hr5.seq hr6).frame_arr plIv (by simp [peelP5B, Com.warrs,
+      Ne.symm (hcf plIv (by simp [plArrNames])), (show plIv ≠ plFl by decide)])]
+  obtain ⟨σ7, hr7, hsorted⟩ := (peelP7B_spec (X := X) (io := io) (iv := iv) (off := off)
+    hNB hMB (hmf plFl (by simp [plArrNames])) (hmf plIo (by simp [plArrNames]))
+    (hmf plIv (by simp [plArrNames])) (peelIOff_zero f M) (peelIOff_last hf)
+    (fun _ _ hij _ => peelIOff_mono f M hij) (fun _ _ hij _ => peelCOff_mono X hij)
+    (peelCOff_succ X) (le_of_eq hoffN) hInvSeg).run
+    ⟨⟨by rw [hrpre6.frame_var "pl.n" (by simp [peelP1B, peelP2B, peelP3B, peelP4B, peelP5B, Com.wvars])]; exact hbase.1,
+      by rw [run_arrs_length_eq hrpre6]; exact hioL,
+      by rw [run_arrs_length_eq hrpre6]; exact hbase.2.2.2.2.2.1,
+      by rw [run_arrs_length_eq hrpre6]; exact hflL,
+      by rw [run_arrs_length_eq hrpre6]; exact hcmL,
+      hio6, hiv6⟩, fun u => hfl6 u u.isLt⟩
+  have hrun := hr1.seq (hr2.seq (hr3.seq (hr3b.seq (hr4.seq (hr5.seq (hr6.seq hr7))))))
+  refine ⟨σ7, hrun.mono (by omega), off, peelCOff_zero X, ?_, ?_, peelCOff_succ X, ?_, hsorted⟩
+  · rw [run_arrs_length_eq hrun]; exact hcoL
+  · intro i hi
+    rw [(hr6.seq hr7).frame_arr co (by simp [peelP7B, Com.warrs,
+      hcf plFl (by simp [plArrNames]), hc_cm])]
+    exact hco5 i hi
+  · rw [hoffN, run_arrs_length_eq hrun]; exact hcmL
+
+/-- The concrete peel program: built adjacency to exact centres and ascending cluster CSR. -/
+theorem peelCom_spec {B N R : ℕ} {G : SimpleGraph (Fin N)}
+    {π : Equiv.Perm (Fin N)} {nNs ca co cm ra ao aj dg mt od : String}
+    (hsq : N * N + N + 4 < B) (hRB : 2 * R + 2 < B) (hR : 1 ≤ R)
+    (hd : ([ca, co, cm, ra, ao, aj, dg, mt, od] ++ plArrNames).Nodup) :
+    Spec B (fun σ => σ.vars nNs = N ∧ RankArr ra π σ ∧ OrdArr od π σ ∧
+        DelAdjSt ao aj dg mt G ∅ σ ∧ N ≤ (σ.arrs ca).length ∧
+        N + 1 ≤ (σ.arrs co).length ∧ peelScr N (fun _ => cm) 0 σ)
+      (peelCom R nNs ca co cm ra ao aj dg mt od)
+      (fun _ σ' => CtrArr ca (pctr G π R) σ' ∧ ClusterCsr co cm (pfib G π R) σ')
+      (peelK G π R) := by
+  classical
+  have hsw : [ca, ra, ao, aj, dg, mt, od, plDd, plRw, plRe].Nodup := by
+    have h := hd
+    simp only [plArrNames, List.cons_append, List.nil_append, List.nodup_cons,
+      List.mem_cons, List.not_mem_nil, not_or, not_false_eq_true, List.nodup_nil, and_true] at h ⊢
+    tauto
+  have hrg : ([co, cm, ra, od] ++ plArrNames).Nodup := by
+    have h := hd
+    simp only [plArrNames, List.cons_append, List.nil_append, List.nodup_cons,
+      List.mem_cons, List.not_mem_nil, not_or, not_false_eq_true, List.nodup_nil, and_true] at h ⊢
+    tauto
+  have hcframe : ca ∉ (peelRegroupB co cm ra od).warrs := by
+    have h := hd
+    simp only [plArrNames, List.cons_append, List.nil_append, List.nodup_cons,
+      List.mem_cons, List.not_mem_nil, not_or, not_false_eq_true, List.nodup_nil, and_true] at h
+    simp only [peelRegroupB, peelP1B, peelP2B, peelP3B, peelP3bB, peelP4B,
+      peelP5B, peelP6B, peelP7B, Com.warrs, List.mem_append, List.mem_cons,
+      List.not_mem_nil, not_or, not_false_eq_true]
+    tauto
+  rintro σ ⟨hn, hra, hod, hadj, hcaL, hcoL, hscr⟩
+  obtain ⟨hddL, hrwL, hreL, hdzL, hioL, hcuL, hivL, hflL, hcmL⟩ := hscr
+  dsimp only at hcmL
+  obtain ⟨σ1, hri, hsw0⟩ := (peelInitB_spec hsq hRB hsw).run
+    ⟨hn, hod, hra, hadj, hcaL, hddL, hrwL, hreL⟩
+  obtain ⟨σ2, hrs, hswN⟩ := (peelSweepB_spec hsq hRB hR hsw).run hsw0
+  have hrpre := hri.seq hrs
+  have hlen := run_arrs_length_eq hrpre
+  obtain ⟨hn2, hm2, _, hod2, hra2, _, hcaL2, hcav2, _, _, hrwL2, hreL2, hrev2, hsegs2⟩ := hswN
+  let f : ℕ → ℕ := fun p => (σ2.arrs plRw).getD p 0
+  let e := mval G π R
+  let X := pfib G π R
+  let M := mval G π R N
+  have hMN : M ≤ N * N := mval_le G π R
+  have hsegments : ∀ i, (hi : i < N) → SegAt f (e i) (e (i + 1)) (X (π.symm ⟨i, hi⟩)) := by
+    intro i hi
+    have h := hsegs2 i hi
+    rwa [pfibR_eq G π R hi] at h
+  obtain ⟨σ3, hrr, hcsr⟩ := (peelRegroupB_spec (B := B) (ρ := π.symm) (e := e) (f := f) (X := X)
+    (M := M) (co := co) (cm := cm) (ra := ra) (od := od)
+    (by omega) (by omega) hrg (mval_zero G π R) rfl
+    (fun _ _ hij _ => mval_mono G π R hij) hsegments).run (σ := σ2)
+    ⟨⟨hn2, hod2.1, hreL2, by omega, by rw [hlen]; exact hcuL,
+      by rw [hlen]; omega,
+      fun i hi => by rw [peelRow_eq π.symm hi]; exact hod2.2 ⟨i, hi⟩,
+      hrev2, fun _ _ => rfl⟩, hm2, hra2,
+      by rw [hlen]; exact hdzL, by rw [hlen]; exact hioL,
+      by rw [hlen]; exact hflL, by rw [hlen]; exact hcoL,
+      by rw [hlen]; omega⟩
+  have hrun := hri.seq (hrs.seq hrr)
+  refine ⟨σ3, hrun.mono ?_, ?_, hcsr⟩
+  · dsimp [M]
+    simp only [peelK, stepK, mval, Finset.sum_add_distrib, ← Finset.mul_sum,
+      Finset.sum_const, Finset.card_range, smul_eq_mul]
+    omega
+  · have hcaeq := hrr.frame_arr ca hcframe
+    refine ⟨by rw [hcaeq]; exact hcaL2, ?_⟩
+    intro v
+    rw [hcaeq, hcav2 v, if_pos (π (pctr G π R v)).isLt]
+
+/-- Carrier-bounded allocations imply every smaller arena's peel scratch requirements. -/
+theorem peelScr_mono {n N j : ℕ} {cm : ℕ → String} {σ : Env}
+    (hN : N ≤ n) (hs : peelScr n cm j σ) : peelScr N cm j σ := by
+  have hsq : N * N ≤ n * n := Nat.mul_le_mul hN hN
+  obtain ⟨h1, h2, h3, h4, h5, h6, h7, h8, h9⟩ := hs
+  exact ⟨by omega, by omega, by omega, by omega, by omega, by omega, by omega, by omega, by omega⟩
+
+open Lax11.GraphEncoding
+open Lax3.ColoredGraphs Lax3.DistFO Lax3.ScatterSentences Lax3.Locality
+open Lax12.GraphClasses Lax12.NowhereDenseClasses
+open Lax3.FirstOrder (FO)
+open Lax3Proofs.Driver
+
+/-- The peel command family at the recursion's fixed radius. -/
+def peelFamily (R : ℕ) (ca co cm ra ao aj dg mt od : ℕ → String) (j : ℕ) : Com :=
+  peelCom R (arenaNames j).nN (ca j) (co j) (cm j) (ra j)
+    (ao j) (aj j) (dg j) (mt j) (od j)
+
+/-- Syntactic freshness of the two arena cells and five arena arrays. -/
+def peelArenaFresh (nm : ArenaNames) (c : Com) : Prop :=
+  nm.nN ∉ c.wvars ∧ nm.nS ∉ c.wvars ∧
+  ∀ a ∈ [nm.off, nm.tgt, nm.col, nm.up, nm.hist], a ∉ c.warrs
+
+private theorem peel_word_room {N n q R : ℕ} {G : SimpleGraph (Fin n)}
+    {x : List ℕ} (henc : EncodesGraph x n G) (hN : N ≤ n)
+    (hq : 2 * R + 3 ≤ q) : N * N + N + 4 < mcB q x ∧ 2 * R + 2 < mcB q x := by
+  have hnx : n + 3 ≤ x.length := by
+    have := henc.length_eq
+    have := henc.vertexCount_eq
+    omega
+  have hbase : (x.length + 1) ^ 2 ≤ mcB q x := by
+    exact Nat.le_mul_of_pos_left _ (by omega)
+  have hsq : N * N + N + 4 < (x.length + 1) ^ 2 := by nlinarith
+  have hqlow : q ≤ mcB q x := Nat.le_mul_of_pos_right _ (by positivity)
+  exact ⟨hsq.trans_le hbase, by omega⟩
+
+open Classical in
+/-- `CovPeelIn` discharged by the concrete live-prefix peel and counting regroup.
+The only hypotheses are syntactic name separation and the schedule's uniform
+word constant. Scratch requirements are the length-only `peelScr` descriptor;
+`Setup.one_le_R` supplies the radius condition used by the scan charge. -/
+theorem covPeelIn_peelCom (C : GraphClass) (hC : NowhereDense C)
+    (φ : FO 0) (ord : CoverSpec.OrderingRoutine) {n : ℕ}
+    (G : SimpleGraph (Fin n)) (c w q : ℕ) (ℓp : ℕ → ℕ)
+    (htabF : (j : ℕ) →
+      (A : Arena ((Headline.headlineSetup C hC φ).pal j) n) →
+      Fin A.N → Fin (ℓp j) → List (Fin A.N))
+    (hbf : ℕ → ℕ)
+    (Adm : (j : ℕ) → Arena ((Headline.headlineSetup C hC φ).pal j) n → Prop)
+    (ca co cm ra ao aj dg mt od : ℕ → String)
+    (hq : 2 * (Headline.headlineSetup C hC φ).R + 3 ≤ q)
+    (hd : ∀ j, ([ca j, co j, cm j, ra j, ao j, aj j, dg j, mt j, od j] ++ plArrNames).Nodup)
+    (hf : ∀ j, peelArenaFresh (arenaNames j)
+      (peelFamily (Headline.headlineSetup C hC φ).R ca co cm ra ao aj dg mt od j)) :
+    CovPeelIn C hC φ ord G c w q ℓp htabF hbf Adm ca co cm ra ao aj dg mt od
+      (peelScr n cm)
+      (peelFamily (Headline.headlineSetup C hC φ).R ca co cm ra ao aj dg mt od)
+      (fun _j A => peelK A.G (ord A.N A.G).order (Headline.headlineSetup C hC φ).R) := by
+  intro x hx j hj A hAdm hbot σ hσ
+  obtain ⟨hA, hrank, hord, hadj, hca, hco, hscr⟩ := hσ
+  have hN : A.N ≤ n := arenaN_le A
+  obtain ⟨hsq, hRB⟩ := peel_word_room hx.1 hN hq
+  obtain ⟨σ', hr, hctr, hcsr⟩ := (peelCom_spec (B := mcB q x)
+    hsq hRB (Headline.headlineSetup C hC φ).one_le_R (hd j)).run
+    ⟨hA.n_eq, hrank, hord, hadj, hca, hco, peelScr_mono hN hscr⟩
+  obtain ⟨hfn, hfs, hfa⟩ := hf j
+  refine ⟨σ', hr, ?_, hctr, hcsr⟩
+  exact arenaStW_of_eq hA (hr.frame_var _ hfn) (hr.frame_var _ hfs)
+    (hr.frame_arr _ (hfa _ (by simp))) (hr.frame_arr _ (hfa _ (by simp)))
+    (hr.frame_arr _ (hfa _ (by simp))) (hr.frame_arr _ (hfa _ (by simp)))
+    (hr.frame_arr _ (hfa _ (by simp)))
 
 end Lax3Proofs.Prog
