@@ -147,6 +147,7 @@ import Lax3Proofs.SolveChannels
 import Lax3Proofs.SolveCodegen
 import Lax3Proofs.SolveStageCharge
 import Lax3Proofs.SolveFrameCharge
+import Lax3Proofs.SolveUniformMachine
 
 -- The proofs package of submission Lax3.
 --
