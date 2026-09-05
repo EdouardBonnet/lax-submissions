@@ -59,6 +59,14 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — sparse symmetrization landed
+
+Reviewed `74d27f7`, landed through `be8280d`. The real final conversion scans
+occupied arcs and their reversals for `116*M+16`, yielding exactly `D.toGraph`;
+all source/frame/length facts and the occupied-length bound are retained.
+Full archive build and axiom checks pass. Full AUG composition continues in
+the existing isolated worker tree.
+
 ### 2026-09-05 — sparse build and computed-rank adapter landed
 
 Reviewed `fbf06d3`, landed through `e898e98`. `agBuildPeel_spec` composes
