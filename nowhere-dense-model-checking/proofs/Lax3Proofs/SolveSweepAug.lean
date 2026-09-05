@@ -1561,4 +1561,444 @@ theorem agDictRow_run {B N ns U : ℕ} (o t ix ky sz rv fv kv tv hv iv lm nN : S
     rw [hvt y hy1 hy2 hy3 hy4 hy5]
     simp [ρ, hy6]
 
+private theorem agName_ne {xs : List String} (h : xs.Nodup) (i j : ℕ)
+    (hi : i < xs.length) (hj : j < xs.length) (hne : i ≠ j) :
+    xs[i] ≠ xs[j] := fun he => hne (h.getElem_inj_iff.mp he)
+
+private theorem agSum_getD_map {α : Type*} (xs : List α) (d : α) (f : α → ℕ) :
+    (∑ i ∈ Finset.range xs.length, f (xs.getD i d)) = (xs.map f).sum := by
+  induction xs with
+  | nil => simp
+  | cons x xs ih =>
+      rw [List.length_cons, Finset.sum_range_succ']
+      simp only [List.getD_cons_succ, List.getD_cons_zero, List.map_cons, List.sum_cons]
+      rw [ih, Nat.add_comm]
+
+private theorem agEvalRowLen {B N ns : ℕ} (o t rv : String)
+    {rows : Fin N → List (Fin N)} {off : ℕ → ℕ} {σ : Env}
+    (h : AgCsrRows o t ns rows off σ) (v : Fin N) (hr : σ.vars rv = v)
+    (hNB : N + 1 < B) (hnsB : ns < B) :
+    (Expr.sub (.get o (.add (.var rv) (.lit 1))) (.get o (.var rv))).evalB B σ
+      = some (rows v).length := by
+  have hv := agEvalVar (B := B) hr (lt_trans v.isLt (show N < B by omega))
+  have h1 := agEvalGet (agEvalAdd hv (evalB_lit (by omega)) (by omega))
+    (lt_of_lt_of_le (by omega) h.off_len) (h.offsets (v + 1) (by omega))
+    (lt_of_le_of_lt (h.off_le (by omega)) hnsB)
+  have h0 := agEvalGet hv (lt_of_lt_of_le (by omega) h.off_len)
+    (h.offsets v (by omega)) (lt_of_le_of_lt (h.off_le (by omega)) hnsB)
+  have hs := agEvalSub h1 h0
+  rw [h.off_step v, Nat.add_sub_cancel_left] at hs
+  exact hs (lt_of_le_of_lt (h.row_len_le v) hnsB)
+
+/-- Prefix of the actual witness work at a fixed outer vertex. For transitive
+paths the middle vertex selects the inner in-list; for fraternity it is the
+fixed outer vertex's in-list again. These are ghost lists, never allocated. -/
+def agWitnessPart {N : ℕ} (rows : Fin N → List (Fin N)) (b : Bool)
+    (v : Fin N) (i : ℕ) : List ℕ :=
+  ((rows v).take i).flatMap fun w =>
+    (rows (if b then v else w)).map fun u =>
+      agArcKey (if b then (w, u) else (u, v))
+
+private theorem agWitnessPart_succ {N : ℕ} (rows : Fin N → List (Fin N))
+    (b : Bool) (v : Fin N) {i : ℕ} (hi : i < (rows v).length) :
+    agWitnessPart rows b v (i + 1) = agWitnessPart rows b v i ++
+      ((rows (if b then v else (rows v)[i])).map fun u =>
+        agArcKey (if b then ((rows v)[i], u) else (u, v))) := by
+  simp only [agWitnessPart, List.take_succ_eq_append_getElem hi,
+    List.flatMap_append, List.flatMap_cons, List.flatMap_nil, List.append_nil]
+
+/-- One middle turn of the nested witness scan. -/
+def agWitnessBody (o t ix ky sz ov rv fv kv tv hv iv lm yv nN : String)
+    (b : Bool) : Com :=
+  .seq (.assign rv (if b then .var ov else agRowGet o t ov yv))
+    (.seq (.assign fv (if b then agRowGet o t ov yv else .var ov))
+      (.seq (agDictRow o t ix ky sz rv fv kv tv hv iv lm nN b)
+        (.assign yv (.add (.var yv) (.lit 1)))))
+
+/-- The two actual nested in-list loops at one outer vertex. -/
+def agDictWitnessRow (o t ix ky sz ov rv fv kv tv hv iv lm yv yl nN : String)
+    (b : Bool) : Com :=
+  .seq (.assign yl (.sub (.get o (.add (.var ov) (.lit 1))) (.get o (.var ov))))
+    (.seq (.assign yv (.lit 0))
+      (.while (.lt (.var yv) (.var yl))
+        (agWitnessBody o t ix ky sz ov rv fv kv tv hv iv lm yv nN b)))
+
+set_option maxHeartbeats 1200000 in
+/-- Both nested witness scans, priced by the sum of the actual inner row
+lengths. In the fraternity case that sum is the squared in-degree. -/
+theorem agDictWitnessRow_run {B N ns U : ℕ}
+    (o t ix ky sz ov rv fv kv tv hv iv lm yv yl nN : String)
+    (b : Bool) (harr : ix ≠ ky)
+    (hread : o ≠ ix ∧ o ≠ ky ∧ t ≠ ix ∧ t ≠ ky)
+    (hvs : ([nN, ov, rv, fv, sz, kv, tv, hv, iv, lm, yv, yl] : List String).Nodup)
+    (hNB : N + 1 < B) (hnsB : ns < B) (hNU : N * N ≤ U) (hUB : U < B)
+    (rows : Fin N → List (Fin N)) (off : ℕ → ℕ) (ks : List ℕ) (v : Fin N)
+    (σ : Env) (hC : AgCsrRows o t ns rows off σ) (hD : AgDictSt ix ky sz B U ks σ)
+    (hov : σ.vars ov = v) (hn : σ.vars nN = N) :
+    ∃ τ, Run B (agDictWitnessRow o t ix ky sz ov rv fv kv tv hv iv lm yv yl nN b) σ τ
+        (58 * ((rows v).map fun w => (rows (if b then v else w)).length).sum
+          + 30 * (rows v).length + 14) ∧
+      AgDictSt ix ky sz B U
+        (agDictUnion ks (agWitnessPart rows b v (rows v).length)) τ ∧
+      (∀ y, y ≠ rv → y ≠ fv → y ≠ sz → y ≠ kv → y ≠ tv → y ≠ hv →
+        y ≠ iv → y ≠ lm → y ≠ yv → y ≠ yl → τ.vars y = σ.vars y) ∧
+      (∀ a, a ≠ ix → a ≠ ky → τ.arrs a = σ.arrs a) ∧
+      (∀ a, (τ.arrs a).length = (σ.arrs a).length) := by
+  have hinner : ([nN, rv, fv, sz, kv, tv, hv, iv, lm] : List String).Nodup :=
+    hvs.sublist (List.Sublist.cons_cons nN (List.Sublist.cons ov
+      (List.take_sublist 8 [rv, fv, sz, kv, tv, hv, iv, lm, yv, yl])))
+  have n_o : nN ≠ ov := agName_ne hvs 0 1 (by simp) (by simp) (by decide)
+  have n_r : nN ≠ rv := agName_ne hvs 0 2 (by simp) (by simp) (by decide)
+  have n_f : nN ≠ fv := agName_ne hvs 0 3 (by simp) (by simp) (by decide)
+  have n_s : nN ≠ sz := agName_ne hvs 0 4 (by simp) (by simp) (by decide)
+  have n_k : nN ≠ kv := agName_ne hvs 0 5 (by simp) (by simp) (by decide)
+  have n_t : nN ≠ tv := agName_ne hvs 0 6 (by simp) (by simp) (by decide)
+  have n_h : nN ≠ hv := agName_ne hvs 0 7 (by simp) (by simp) (by decide)
+  have n_i : nN ≠ iv := agName_ne hvs 0 8 (by simp) (by simp) (by decide)
+  have n_l : nN ≠ lm := agName_ne hvs 0 9 (by simp) (by simp) (by decide)
+  have n_y : nN ≠ yv := agName_ne hvs 0 10 (by simp) (by simp) (by decide)
+  have n_e : nN ≠ yl := agName_ne hvs 0 11 (by simp) (by simp) (by decide)
+  have o_r : ov ≠ rv := agName_ne hvs 1 2 (by simp) (by simp) (by decide)
+  have o_f : ov ≠ fv := agName_ne hvs 1 3 (by simp) (by simp) (by decide)
+  have o_s : ov ≠ sz := agName_ne hvs 1 4 (by simp) (by simp) (by decide)
+  have o_k : ov ≠ kv := agName_ne hvs 1 5 (by simp) (by simp) (by decide)
+  have o_t : ov ≠ tv := agName_ne hvs 1 6 (by simp) (by simp) (by decide)
+  have o_h : ov ≠ hv := agName_ne hvs 1 7 (by simp) (by simp) (by decide)
+  have o_i : ov ≠ iv := agName_ne hvs 1 8 (by simp) (by simp) (by decide)
+  have o_l : ov ≠ lm := agName_ne hvs 1 9 (by simp) (by simp) (by decide)
+  have o_y : ov ≠ yv := agName_ne hvs 1 10 (by simp) (by simp) (by decide)
+  have o_e : ov ≠ yl := agName_ne hvs 1 11 (by simp) (by simp) (by decide)
+  have r_f : rv ≠ fv := agName_ne hvs 2 3 (by simp) (by simp) (by decide)
+  have r_s : rv ≠ sz := agName_ne hvs 2 4 (by simp) (by simp) (by decide)
+  have r_k : rv ≠ kv := agName_ne hvs 2 5 (by simp) (by simp) (by decide)
+  have r_t : rv ≠ tv := agName_ne hvs 2 6 (by simp) (by simp) (by decide)
+  have r_h : rv ≠ hv := agName_ne hvs 2 7 (by simp) (by simp) (by decide)
+  have r_i : rv ≠ iv := agName_ne hvs 2 8 (by simp) (by simp) (by decide)
+  have r_l : rv ≠ lm := agName_ne hvs 2 9 (by simp) (by simp) (by decide)
+  have r_y : rv ≠ yv := agName_ne hvs 2 10 (by simp) (by simp) (by decide)
+  have r_e : rv ≠ yl := agName_ne hvs 2 11 (by simp) (by simp) (by decide)
+  have f_s : fv ≠ sz := agName_ne hvs 3 4 (by simp) (by simp) (by decide)
+  have f_k : fv ≠ kv := agName_ne hvs 3 5 (by simp) (by simp) (by decide)
+  have f_t : fv ≠ tv := agName_ne hvs 3 6 (by simp) (by simp) (by decide)
+  have f_h : fv ≠ hv := agName_ne hvs 3 7 (by simp) (by simp) (by decide)
+  have f_i : fv ≠ iv := agName_ne hvs 3 8 (by simp) (by simp) (by decide)
+  have f_l : fv ≠ lm := agName_ne hvs 3 9 (by simp) (by simp) (by decide)
+  have f_y : fv ≠ yv := agName_ne hvs 3 10 (by simp) (by simp) (by decide)
+  have f_e : fv ≠ yl := agName_ne hvs 3 11 (by simp) (by simp) (by decide)
+  have s_k : sz ≠ kv := agName_ne hvs 4 5 (by simp) (by simp) (by decide)
+  have s_t : sz ≠ tv := agName_ne hvs 4 6 (by simp) (by simp) (by decide)
+  have s_h : sz ≠ hv := agName_ne hvs 4 7 (by simp) (by simp) (by decide)
+  have s_i : sz ≠ iv := agName_ne hvs 4 8 (by simp) (by simp) (by decide)
+  have s_l : sz ≠ lm := agName_ne hvs 4 9 (by simp) (by simp) (by decide)
+  have s_y : sz ≠ yv := agName_ne hvs 4 10 (by simp) (by simp) (by decide)
+  have s_e : sz ≠ yl := agName_ne hvs 4 11 (by simp) (by simp) (by decide)
+  have k_t : kv ≠ tv := agName_ne hvs 5 6 (by simp) (by simp) (by decide)
+  have k_h : kv ≠ hv := agName_ne hvs 5 7 (by simp) (by simp) (by decide)
+  have k_i : kv ≠ iv := agName_ne hvs 5 8 (by simp) (by simp) (by decide)
+  have k_l : kv ≠ lm := agName_ne hvs 5 9 (by simp) (by simp) (by decide)
+  have k_y : kv ≠ yv := agName_ne hvs 5 10 (by simp) (by simp) (by decide)
+  have k_e : kv ≠ yl := agName_ne hvs 5 11 (by simp) (by simp) (by decide)
+  have t_h : tv ≠ hv := agName_ne hvs 6 7 (by simp) (by simp) (by decide)
+  have t_i : tv ≠ iv := agName_ne hvs 6 8 (by simp) (by simp) (by decide)
+  have t_l : tv ≠ lm := agName_ne hvs 6 9 (by simp) (by simp) (by decide)
+  have t_y : tv ≠ yv := agName_ne hvs 6 10 (by simp) (by simp) (by decide)
+  have t_e : tv ≠ yl := agName_ne hvs 6 11 (by simp) (by simp) (by decide)
+  have h_i : hv ≠ iv := agName_ne hvs 7 8 (by simp) (by simp) (by decide)
+  have h_l : hv ≠ lm := agName_ne hvs 7 9 (by simp) (by simp) (by decide)
+  have h_y : hv ≠ yv := agName_ne hvs 7 10 (by simp) (by simp) (by decide)
+  have h_e : hv ≠ yl := agName_ne hvs 7 11 (by simp) (by simp) (by decide)
+  have i_l : iv ≠ lm := agName_ne hvs 8 9 (by simp) (by simp) (by decide)
+  have i_y : iv ≠ yv := agName_ne hvs 8 10 (by simp) (by simp) (by decide)
+  have i_e : iv ≠ yl := agName_ne hvs 8 11 (by simp) (by simp) (by decide)
+  have l_y : lm ≠ yv := agName_ne hvs 9 10 (by simp) (by simp) (by decide)
+  have l_e : lm ≠ yl := agName_ne hvs 9 11 (by simp) (by simp) (by decide)
+  have y_e : yv ≠ yl := agName_ne hvs 10 11 (by simp) (by simp) (by decide)
+  let σa := σ.setVar yl (rows v).length
+  have hload : Run B (.assign yl (.sub (.get o (.add (.var ov) (.lit 1)))
+      (.get o (.var ov)))) σ σa 8 :=
+    Run.assign (agEvalRowLen o t ov hC v hov hNB hnsB)
+  let I : ℕ → Env → Prop := fun i ρ =>
+    AgDictSt ix ky sz B U (agDictUnion ks (agWitnessPart rows b v i)) ρ ∧
+    (∀ y, y ≠ rv → y ≠ fv → y ≠ sz → y ≠ kv → y ≠ tv → y ≠ hv →
+      y ≠ iv → y ≠ lm → y ≠ yv → ρ.vars y = σa.vars y) ∧
+    (∀ a, a ≠ ix → a ≠ ky → ρ.arrs a = σ.arrs a) ∧
+    (∀ a, (ρ.arrs a).length = (σ.arrs a).length)
+  let K : ℕ → ℕ := fun i =>
+    58 * (rows (if b then v else (rows v).getD i v)).length + 26
+  have hstep : ∀ i, i < (rows v).length → ∀ ρ, I i ρ → ρ.vars yv = i →
+      ∃ τ, Run B (agWitnessBody o t ix ky sz ov rv fv kv tv hv iv lm yv nN b)
+        ρ τ (K i) ∧ I (i + 1) τ ∧ τ.vars yv = i + 1 := by
+    intro i hi ρ hI hy
+    obtain ⟨hDr, hfr, har, hlr⟩ := hI
+    have hCr : AgCsrRows o t ns rows off ρ :=
+      hC.of_eq (har o hread.1 hread.2.1) (har t hread.2.2.1 hread.2.2.2)
+    have hor : ρ.vars ov = v := by
+      rw [hfr ov o_r o_f o_s o_k o_t o_h o_i o_l o_y]
+      simpa [σa, o_e] using hov
+    have hnr : ρ.vars nN = N := by
+      rw [hfr nN n_r n_f n_s n_k n_t n_h n_i n_l n_y]
+      simpa [σa, n_e] using hn
+    let w := (rows v)[i]
+    let r : Fin N := if b then v else w
+    let f : Fin N := if b then w else v
+    let ρa := ρ.setVar rv r
+    let ρb := ρa.setVar fv f
+    have hreadR : (if b then Expr.var ov else agRowGet o t ov yv).evalB B ρ = some (r : ℕ) := by
+      have he := agEvalRowGet o t ov yv hCr v hor hy hi (by omega) hnsB
+      cases b
+      · exact he
+      · exact agEvalVar hor (lt_trans v.isLt (by omega))
+    have hreadF : (if b then agRowGet o t ov yv else Expr.var ov).evalB B ρa = some (f : ℕ) := by
+      have hoy : ρa.vars ov = v := by simp [ρa, o_r, hor]
+      have hiy : ρa.vars yv = i := by simp [ρa, Ne.symm r_y, hy]
+      have he := agEvalRowGet o t ov yv (hCr.of_eq (τ := ρa) rfl rfl) v hoy hiy hi
+        (by omega) hnsB
+      cases b
+      · exact agEvalVar hoy (lt_trans v.isLt (by omega))
+      · exact he
+    have hr1 := Run.assign (x := rv) hreadR
+    have hr2 := Run.assign (x := fv) hreadF
+    have hDb : AgDictSt ix ky sz B U (agDictUnion ks (agWitnessPart rows b v i)) ρb :=
+      hDr.of_eq rfl rfl (by simp [ρb, ρa, Ne.symm f_s, Ne.symm r_s])
+    have hCb : AgCsrRows o t ns rows off ρb := hCr.of_eq rfl rfl
+    have hrb : ρb.vars rv = r := by simp [ρb, ρa, r_f]
+    have hfb : ρb.vars fv = f := by simp [ρb]
+    have hnb : ρb.vars nN = N := by simp [ρb, ρa, n_f, n_r, hnr]
+    obtain ⟨ρc, hrow, hDc, hfc, hac, hlc⟩ := agDictRow_run
+      o t ix ky sz rv fv kv tv hv iv lm nN b harr hread hinner
+      hNB hnsB hNU hUB rows off (agDictUnion ks (agWitnessPart rows b v i)) r f
+      ρb hCb hDb hrb hfb hnb
+    have hyc : ρc.vars yv = i := by
+      rw [hfc yv (Ne.symm s_y) (Ne.symm k_y) (Ne.symm t_y)
+        (Ne.symm h_y) (Ne.symm i_y) (Ne.symm l_y)]
+      simp [ρb, ρa, Ne.symm f_y, Ne.symm r_y, hy]
+    let τ := ρc.setVar yv (i + 1)
+    have hinc : Run B (.assign yv (.add (.var yv) (.lit 1))) ρc τ 4 :=
+      Run.assign (agEvalAdd (agEvalVar hyc (by
+        have := hC.row_len_le v; omega)) (evalB_lit (by omega)) (by
+          have := hC.row_len_le v; omega))
+    have hnext : AgDictSt ix ky sz B U (agDictUnion ks (agWitnessPart rows b v (i + 1))) τ := by
+      rw [agWitnessPart_succ rows b v hi, agDictUnion_append]
+      have hDct := hDc.of_eq (τ := τ) rfl rfl (by simp [τ, s_y])
+      convert hDct using 1 <;> cases b <;> rfl
+    refine ⟨τ, (hr1.seq (hr2.seq (hrow.seq hinc))).mono ?_,
+      ⟨hnext, ?_, ?_, ?_⟩, by simp [τ]⟩
+    · dsimp only [K]
+      rw [List.getD_eq_getElem (rows v) v hi]
+      cases b <;> simp [agRowGet, Expr.size, r, w] <;> omega
+    · intro y hy1 hy2 hy3 hy4 hy5 hy6 hy7 hy8 hy9
+      rw [show τ.vars y = ρc.vars y by simp [τ, hy9],
+        hfc y hy3 hy4 hy5 hy6 hy7 hy8]
+      rw [show ρb.vars y = ρ.vars y by simp [ρb, ρa, hy1, hy2]]
+      exact hfr y hy1 hy2 hy3 hy4 hy5 hy6 hy7 hy8 hy9
+    · intro a ha1 ha2
+      rw [show τ.arrs a = ρc.arrs a from rfl, hac a ha1 ha2]
+      exact har a ha1 ha2
+    · intro a
+      rw [show τ.arrs a = ρc.arrs a from rfl, hlc a]
+      exact hlr a
+  have hbound : ∀ i, i ≤ (rows v).length → ∀ ρ, I i ρ → ρ.vars yl = (rows v).length := by
+    intro i _ ρ hI
+    rw [hI.2.1 yl (Ne.symm r_e) (Ne.symm f_e) (Ne.symm s_e) (Ne.symm k_e)
+      (Ne.symm t_e) (Ne.symm h_e) (Ne.symm i_e) (Ne.symm l_e) (Ne.symm y_e)]
+    simp [σa]
+  have hstart : I 0 (σa.setVar yv 0) := by
+    refine ⟨?_, ?_, fun _ _ _ => rfl, fun _ => rfl⟩
+    · have hh := hD.of_eq (τ := σa.setVar yv 0) rfl rfl (by simp [σa, s_y, s_e])
+      simpa only [agWitnessPart, List.take_zero, List.flatMap_nil, agDictUnion_nil] using hh
+    · intro y _ _ _ _ _ _ _ _ hy; simp [hy]
+  obtain ⟨τ, hrun, hI, hy⟩ := agForSum_run yv yl
+    (agWitnessBody o t ix ky sz ov rv fv kv tv hv iv lm yv nN b) I K
+    (lt_of_le_of_lt (hC.row_len_le v) hnsB) hbound hstep σa hstart
+  have hsum : (∑ i ∈ Finset.range (rows v).length, K i) =
+      58 * ((rows v).map fun w => (rows (if b then v else w)).length).sum
+        + 26 * (rows v).length := by
+    simp only [K, Finset.sum_add_distrib, ← Finset.mul_sum, Finset.sum_const,
+      smul_eq_mul, Finset.card_range]
+    rw [agSum_getD_map (rows v) v (fun w => (rows (if b then v else w)).length)]
+    omega
+  refine ⟨τ, (hload.seq hrun).mono (by rw [hsum]; omega), hI.1, ?_, hI.2.2.1, hI.2.2.2⟩
+  intro y hy1 hy2 hy3 hy4 hy5 hy6 hy7 hy8 hy9 hy10
+  rw [hI.2.1 y hy1 hy2 hy3 hy4 hy5 hy6 hy7 hy8 hy9]
+  simp [σa, hy10]
+
+/-- Prefix of the full witness stream, by actual outer vertices. -/
+def agAllWitnessPart {N : ℕ} (rows : Fin N → List (Fin N)) (b : Bool) (i : ℕ) : List ℕ :=
+  ((List.finRange N).take i).flatMap fun v => agWitnessPart rows b v (rows v).length
+
+private theorem agAllWitnessPart_succ {N : ℕ} (rows : Fin N → List (Fin N))
+    (b : Bool) {i : ℕ} (hi : i < N) :
+    agAllWitnessPart rows b (i + 1) = agAllWitnessPart rows b i ++
+      agWitnessPart rows b ⟨i, hi⟩ (rows ⟨i, hi⟩).length := by
+  rw [agAllWitnessPart, List.take_succ_eq_append_getElem (by simpa using hi)]
+  simp only [List.flatMap_append, List.flatMap_cons, List.flatMap_nil,
+    List.append_nil, List.getElem_finRange]
+  rfl
+
+theorem agAllWitnessPart_full {N : ℕ} (rows : Fin N → List (Fin N)) (b : Bool) :
+    agAllWitnessPart rows b N =
+      (if b then agFratCandidates rows else agTransCandidates rows).map agArcKey := by
+  have ht : (List.finRange N).take N = List.finRange N := by
+    simpa only [List.length_finRange] using (List.take_length (l := List.finRange N))
+  cases b <;>
+    simp [agAllWitnessPart, agWitnessPart, agFratCandidates, agTransCandidates,
+      List.map_flatMap, List.map_map, Function.comp_def, ht]
+
+/-- A complete sparse transitive/fraternal witness pass. It resets its
+occupied count and enumerates the actual nested in-lists. -/
+def agDictDemands (o t ix ky sz ov rv fv kv tv hv iv lm yv yl nN : String)
+    (b : Bool) : Com :=
+  .seq (.assign sz (.lit 0))
+    (.seq (.assign ov (.lit 0))
+      (.while (.lt (.var ov) (.var nN))
+        (.seq (agDictWitnessRow o t ix ky sz ov rv fv kv tv hv iv lm yv yl nN b)
+          (.assign ov (.add (.var ov) (.lit 1))))))
+
+private theorem agWitness_sums {N : ℕ} {D : Orientation N}
+    {rows : Fin N → List (Fin N)} (h : AgInRows D rows) (b : Bool) :
+    (∑ v, ((rows v).map fun w => (rows (if b then v else w)).length).sum) =
+      if b then fratPairCount D else transPairCount D := by
+  cases b
+  · have hh := agTransCandidates_length h
+    simpa only [agTransCandidates, List.length_flatMap, List.length_map, agSum_finRange] using hh
+  · simp only [↓reduceIte, List.map_const', List.sum_replicate, smul_eq_mul]
+    exact Finset.sum_congr rfl fun v _ => by rw [h.length v]
+
+set_option maxHeartbeats 1600000 in
+/-- The actual demand pass has a sparse charge: transitive witnesses use
+`transPairCount`, fraternity witnesses use `fratPairCount`. The dictionary
+removes duplicate witnesses without scanning or initializing its capacity. -/
+theorem agDictDemands_run {B N ns U : ℕ}
+    (o t ix ky sz ov rv fv kv tv hv iv lm yv yl nN : String)
+    (b : Bool) (harr : ix ≠ ky)
+    (hread : o ≠ ix ∧ o ≠ ky ∧ t ≠ ix ∧ t ≠ ky)
+    (hvs : ([nN, ov, rv, fv, sz, kv, tv, hv, iv, lm, yv, yl] : List String).Nodup)
+    (hNB : N + 1 < B) (hnsB : ns < B) (hNU : N * N ≤ U) (hUB : U < B)
+    (D : Orientation N) (rows : Fin N → List (Fin N)) (off : ℕ → ℕ)
+    (σ : Env) (hC : AgCsrRows o t ns rows off σ) (hR : AgInRows D rows)
+    (hix : U ≤ (σ.arrs ix).length) (hky : U ≤ (σ.arrs ky).length)
+    (hwords : ∀ k < U, (σ.arrs ix).getD k 0 < B) (hn : σ.vars nN = N) :
+    ∃ τ, Run B (agDictDemands o t ix ky sz ov rv fv kv tv hv iv lm yv yl nN b) σ τ
+        (58 * (if b then fratPairCount D else transPairCount D)
+          + 30 * arcCount D + 22 * N + 8) ∧
+      AgDictSt ix ky sz B U
+        (agDictUnion [] ((if b then agFratCandidates rows else agTransCandidates rows).map agArcKey)) τ ∧
+      (∀ y, y ≠ ov → y ≠ rv → y ≠ fv → y ≠ sz → y ≠ kv → y ≠ tv → y ≠ hv →
+        y ≠ iv → y ≠ lm → y ≠ yv → y ≠ yl → τ.vars y = σ.vars y) ∧
+      (∀ a, a ≠ ix → a ≠ ky → τ.arrs a = σ.arrs a) ∧
+      (∀ a, (τ.arrs a).length = (σ.arrs a).length) := by
+  have n_o : nN ≠ ov := agName_ne hvs 0 1 (by simp) (by simp) (by decide)
+  have n_r : nN ≠ rv := agName_ne hvs 0 2 (by simp) (by simp) (by decide)
+  have n_f : nN ≠ fv := agName_ne hvs 0 3 (by simp) (by simp) (by decide)
+  have n_s : nN ≠ sz := agName_ne hvs 0 4 (by simp) (by simp) (by decide)
+  have n_k : nN ≠ kv := agName_ne hvs 0 5 (by simp) (by simp) (by decide)
+  have n_t : nN ≠ tv := agName_ne hvs 0 6 (by simp) (by simp) (by decide)
+  have n_h : nN ≠ hv := agName_ne hvs 0 7 (by simp) (by simp) (by decide)
+  have n_i : nN ≠ iv := agName_ne hvs 0 8 (by simp) (by simp) (by decide)
+  have n_l : nN ≠ lm := agName_ne hvs 0 9 (by simp) (by simp) (by decide)
+  have n_y : nN ≠ yv := agName_ne hvs 0 10 (by simp) (by simp) (by decide)
+  have n_e : nN ≠ yl := agName_ne hvs 0 11 (by simp) (by simp) (by decide)
+  have o_r : ov ≠ rv := agName_ne hvs 1 2 (by simp) (by simp) (by decide)
+  have o_f : ov ≠ fv := agName_ne hvs 1 3 (by simp) (by simp) (by decide)
+  have o_s : ov ≠ sz := agName_ne hvs 1 4 (by simp) (by simp) (by decide)
+  have o_k : ov ≠ kv := agName_ne hvs 1 5 (by simp) (by simp) (by decide)
+  have o_t : ov ≠ tv := agName_ne hvs 1 6 (by simp) (by simp) (by decide)
+  have o_h : ov ≠ hv := agName_ne hvs 1 7 (by simp) (by simp) (by decide)
+  have o_i : ov ≠ iv := agName_ne hvs 1 8 (by simp) (by simp) (by decide)
+  have o_l : ov ≠ lm := agName_ne hvs 1 9 (by simp) (by simp) (by decide)
+  have o_y : ov ≠ yv := agName_ne hvs 1 10 (by simp) (by simp) (by decide)
+  have o_e : ov ≠ yl := agName_ne hvs 1 11 (by simp) (by simp) (by decide)
+  let σa := σ.setVar sz 0
+  obtain ⟨hreset, hD0⟩ := agDictInit_run ix ky sz σ (by omega) hix hky hwords
+  let I : ℕ → Env → Prop := fun i ρ =>
+    AgDictSt ix ky sz B U (agDictUnion [] (agAllWitnessPart rows b i)) ρ ∧
+    (∀ y, y ≠ ov → y ≠ rv → y ≠ fv → y ≠ sz → y ≠ kv → y ≠ tv → y ≠ hv →
+      y ≠ iv → y ≠ lm → y ≠ yv → y ≠ yl → ρ.vars y = σ.vars y) ∧
+    (∀ a, a ≠ ix → a ≠ ky → ρ.arrs a = σ.arrs a) ∧
+    (∀ a, (ρ.arrs a).length = (σ.arrs a).length)
+  let K : ℕ → ℕ := fun i => if hi : i < N then
+    58 * ((rows ⟨i, hi⟩).map fun w => (rows (if b then ⟨i, hi⟩ else w)).length).sum
+      + 30 * (rows ⟨i, hi⟩).length + 18 else 0
+  have hstep : ∀ i, i < N → ∀ ρ, I i ρ → ρ.vars ov = i →
+      ∃ τ, Run B
+        (.seq (agDictWitnessRow o t ix ky sz ov rv fv kv tv hv iv lm yv yl nN b)
+          (.assign ov (.add (.var ov) (.lit 1)))) ρ τ (K i) ∧
+        I (i + 1) τ ∧ τ.vars ov = i + 1 := by
+    intro i hi ρ hI hov
+    obtain ⟨hDr, hfr, har, hlr⟩ := hI
+    have hCr := hC.of_eq (har o hread.1 hread.2.1) (har t hread.2.2.1 hread.2.2.2)
+    have hnr : ρ.vars nN = N :=
+      (hfr nN n_o n_r n_f n_s n_k n_t n_h n_i n_l n_y n_e).trans hn
+    obtain ⟨ρb, hrow, hDb, hfb, hab, hlb⟩ := agDictWitnessRow_run
+      o t ix ky sz ov rv fv kv tv hv iv lm yv yl nN b harr hread hvs
+      hNB hnsB hNU hUB rows off (agDictUnion [] (agAllWitnessPart rows b i)) ⟨i, hi⟩
+      ρ hCr hDr hov hnr
+    have hob : ρb.vars ov = i :=
+      (hfb ov o_r o_f o_s o_k o_t o_h o_i o_l o_y o_e).trans hov
+    let τ := ρb.setVar ov (i + 1)
+    have hinc : Run B (.assign ov (.add (.var ov) (.lit 1))) ρb τ 4 :=
+      Run.assign (agEvalAdd (agEvalVar hob (by omega)) (evalB_lit (by omega)) (by omega))
+    have hnext : AgDictSt ix ky sz B U (agDictUnion [] (agAllWitnessPart rows b (i + 1))) τ := by
+      rw [agAllWitnessPart_succ rows b hi, agDictUnion_append]
+      exact hDb.of_eq rfl rfl (by simp [τ, Ne.symm o_s])
+    refine ⟨τ, (hrow.seq hinc).mono ?_, ⟨hnext, ?_, ?_, ?_⟩, by simp [τ]⟩
+    · dsimp only [K]
+      rw [dif_pos hi]
+    · intro y hy1 hy2 hy3 hy4 hy5 hy6 hy7 hy8 hy9 hy10 hy11
+      rw [show τ.vars y = ρb.vars y by simp [τ, hy1],
+        hfb y hy2 hy3 hy4 hy5 hy6 hy7 hy8 hy9 hy10 hy11]
+      exact hfr y hy1 hy2 hy3 hy4 hy5 hy6 hy7 hy8 hy9 hy10 hy11
+    · intro a ha1 ha2
+      rw [show τ.arrs a = ρb.arrs a from rfl, hab a ha1 ha2]
+      exact har a ha1 ha2
+    · intro a
+      rw [show τ.arrs a = ρb.arrs a from rfl, hlb a]
+      exact hlr a
+  have hbound : ∀ i, i ≤ N → ∀ ρ, I i ρ → ρ.vars nN = N := by
+    intro i _ ρ hI
+    exact (hI.2.1 nN n_o n_r n_f n_s n_k n_t n_h n_i n_l n_y n_e).trans hn
+  have hstart : I 0 (σa.setVar ov 0) := by
+    refine ⟨?_, ?_, fun _ _ _ => rfl, fun _ => rfl⟩
+    · have hh := hD0.of_eq (τ := σa.setVar ov 0) rfl rfl (by simp [σa, Ne.symm o_s])
+      simpa only [agAllWitnessPart, List.take_zero, List.flatMap_nil, agDictUnion_nil] using hh
+    · intro y hy1 _ _ hy4 _ _ _ _ _ _ _
+      simp [σa, hy1, hy4]
+  obtain ⟨τ, hrun, hI, ho⟩ := agForSum_run ov nN
+    (.seq (agDictWitnessRow o t ix ky sz ov rv fv kv tv hv iv lm yv yl nN b)
+      (.assign ov (.add (.var ov) (.lit 1)))) I K (by omega) hbound hstep σa hstart
+  have hsum : (∑ i ∈ Finset.range N, K i) =
+      58 * (if b then fratPairCount D else transPairCount D)
+        + 30 * arcCount D + 18 * N := by
+    rw [Finset.sum_range K]
+    have hK : (∑ v : Fin N, K v) = ∑ v : Fin N,
+        (58 * ((rows v).map fun w => (rows (if b then v else w)).length).sum
+          + 30 * (rows v).length + 18) :=
+      Finset.sum_congr rfl fun v _ => by dsimp only [K]; rw [dif_pos v.isLt]
+    rw [hK]
+    simp only [Finset.sum_add_distrib, ← Finset.mul_sum, Finset.sum_const,
+      smul_eq_mul, Finset.card_univ, Fintype.card_fin]
+    rw [agWitness_sums hR b]
+    have hlen : (∑ v, (rows v).length) = arcCount D :=
+      Finset.sum_congr rfl fun v _ => hR.length v
+    rw [hlen]
+    omega
+  refine ⟨τ, (hreset.seq hrun).mono (by rw [hsum]; omega), ?_,
+    hI.2.1, hI.2.2.1, hI.2.2.2⟩
+  simpa only [agAllWitnessPart_full] using hI.1
+
+/-- The transitive pass's keys are exactly the directed transitive links. -/
+theorem agTransDemand_keys {N : ℕ} {D : Orientation N}
+    {rows : Fin N → List (Fin N)} (h : AgInRows D rows) (u v : Fin N) :
+    agArcKey (u, v) ∈ agDictUnion [] ((agTransCandidates rows).map agArcKey) ↔
+      TransLink D u v := by
+  rw [agDictUnion_arcKey_mem, agTransCandidates_mem h]
+
+/-- The fraternity pass's keys are exactly the common-head links, including
+its counted diagonal. The graph build drops that diagonal explicitly. -/
+theorem agFratDemand_keys {N : ℕ} {D : Orientation N}
+    {rows : Fin N → List (Fin N)} (h : AgInRows D rows) (u v : Fin N) :
+    agArcKey (u, v) ∈ agDictUnion [] ((agFratCandidates rows).map agArcKey) ↔
+      FratLink D u v := by
+  rw [agDictUnion_arcKey_mem, agFratCandidates_mem h]
+
 end Lax3Proofs.Prog
