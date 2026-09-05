@@ -59,6 +59,16 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — sparse key-to-CSR constructor landed
+
+`623d4b2` lands checkpoint `4ec95e6` and imports `SolveSweepAugCsr`.
+The occupied directed-key prefix becomes exact duplicate-free incoming rows
+in `56M + 40N + 37`, preserving the source dictionary and unrelated storage.
+Padded rows feed `GraphCsr` by windows without machine copying. Supervisor
+archive inspection and the actual `bldCore_spec` consumer pass; axioms are
+within the three logical axioms. The worker next packages build/peel adapters
+needed by AUG's round composition.
+
 ### 2026-09-05 — complete compiler layout landed
 
 `171342f` adds `SolveCodegen`. A structural traversal of the actual command
