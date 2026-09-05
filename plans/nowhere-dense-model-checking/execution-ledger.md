@@ -59,6 +59,16 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — scalar stage-charge comparison landed
+
+`c6c3b62` adds `SolveStageCharge`: actual clean PREP and readback are bounded
+by schedule-only coefficients times `centreWork`, exactly the existing
+restriction-plus-isolation charge. The recursive child charge is counted
+separately once. Top scatter and bottom evaluation include constant tails;
+`solveStageCoeff` is one finite constant fixed before graphs or inputs.
+Full archive build and all new theorem axiom checks pass. Next is the guarded
+recursive scalar budget and its uniform input-time consequence.
+
 ### 2026-09-05 — sparse symmetrization landed
 
 Reviewed `74d27f7`, landed through `be8280d`. The real final conversion scans
