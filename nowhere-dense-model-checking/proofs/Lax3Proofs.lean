@@ -132,6 +132,7 @@ import Lax3Proofs.SolveSweepAugRound
 import Lax3Proofs.SolveSweepPeel
 import Lax3Proofs.SolveRunWords
 import Lax3Proofs.SolveChannels
+import Lax3Proofs.SolveCodegen
 
 -- The proofs package of submission Lax3.
 --
