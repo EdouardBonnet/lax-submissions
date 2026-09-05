@@ -59,6 +59,16 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-06 — uniform compilation and linear boundary costs landed
+
+`1a521eb` adds `SolveUniformMachine`. The complete parsing, materialization,
+CSR/root loading and top stage have one fixed linear bound around the recursive
+budget. `exists_machine_of_uniformSolve` chooses one program, natural constant,
+and time function before all graphs and word lengths, absorbing the inferred
+memory layout and real time coefficient into that same constant. Full archive
+build and axiom checks pass at the existing UQW baseline. Concrete clean solve,
+cover integration, and the actual cover cost comparison remain in progress.
+
 ### 2026-09-06 — complete sparse augmentation machine landed
 
 Reviewed `9dbb178`, landed through `4ed0954`. `AugMachine.com_spec` computes
