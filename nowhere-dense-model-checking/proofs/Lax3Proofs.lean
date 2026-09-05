@@ -125,6 +125,7 @@ import Lax3Proofs.SolveSweepBuild
 import Lax3Proofs.SolveSweepMdPeel
 import Lax3Proofs.SolveMdCharge
 import Lax3Proofs.SolveSweepAug
+import Lax3Proofs.SolveSweepPeel
 
 -- The proofs package of submission Lax3.
 --
