@@ -59,6 +59,16 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — canonical channels and admissible recursion landed
+
+`ad72c09` adds `SolveChannels`. The oldest-first history columns equal
+PREP's computed child columns exactly, including filtering inherited paths
+through local embeddings. Their length is uniformly at most `2R + 1`.
+`canonicalAdm` carries history length, increasing root names, and the
+depth-guarded game invariant; root, arbitrary child, and edgeless final-child
+obligations are proved. Full archive inspection passes. Channel proofs use
+the three logical axioms; setup facts retain only the existing UQW dependency.
+
 ### 2026-09-05 — array word invariant landed
 
 `8b73308` adds `SolveRunWords`: every bounded run preserves `ArrWords`,
