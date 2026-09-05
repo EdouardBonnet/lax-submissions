@@ -59,6 +59,17 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — exact sparse greedy augmentation round landed
+
+`3414a87` lands checkpoint `fd377ab` and imports all four new satellites.
+Five validated dictionary lookups implement `mem_greedyStep`; three occupied
+prefix scans produce the exact next-arc dictionary at
+`229*(arcCount + transPairCount + fratPairCount) + 26`. Input dictionaries,
+rank, unrelated state, and all array lengths are preserved. Supervisor
+compilation, concrete-name feasibility, axiom audit, and full archive inspection
+pass with only the three logical axioms. Remaining AUG work composes this
+with sparse CSR conversion and the separately charged min-degree peel.
+
 ### 2026-09-05 — canonical channels and admissible recursion landed
 
 `ad72c09` adds `SolveChannels`. The oldest-first history columns equal
