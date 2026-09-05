@@ -59,6 +59,19 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — guarded scalar recurrence and uniform time landed
+
+`bb0c3dc` adds `SolveFrameCharge`. `chargeFrameK_guard` pays the actual
+branch-sensitive frame: four guard steps, complete clean PREP/readback,
+one child call, eight loop steps per centre, and the six-step loop boundary.
+`chargeFrameK_root_le` closes it against the sparse driver charge, including
+empty graphs. `exists_chargeFrameK_inputTime` chooses one natural-valued
+almost-linear time function before every graph, input, channel family, and
+word length; fixed compiler and linear boundary costs are parameters.
+Full archive build and all new axiom checks pass. Remaining assembly is
+concrete clean layout/cover, actual AUG cost comparison, and the endorsed
+headline. Augmentation rounds must be `3*S.R`; sweep radius remains `S.R`.
+
 ### 2026-09-05 — scalar stage-charge comparison landed
 
 `c6c3b62` adds `SolveStageCharge`: actual clean PREP and readback are bounded
