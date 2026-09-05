@@ -59,6 +59,58 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-06 — complete sparse augmentation machine landed
+
+Reviewed `9dbb178`, landed through `4ed0954`. `AugMachine.com_spec` computes
+the exact deterministic `mdChain` from genuine padded CSR and uninitialized
+reserved arrays with bounded words. Every base/round/final machine phase is
+composed; no assumed machine callback or incoming rank remains. Allocation
+is finite, scans follow occupied prefixes, and every heap logarithm remains
+in the transparent cost. Full archive build, concrete consumers (including
+the `cp.r` array frame), and standard-axiom checks pass. Clean cover integration
+can now instantiate this concrete core; its uniform cost comparison is next.
+
+### 2026-09-05 — guarded scalar recurrence and uniform time landed
+
+`bb0c3dc` adds `SolveFrameCharge`. `chargeFrameK_guard` pays the actual
+branch-sensitive frame: four guard steps, complete clean PREP/readback,
+one child call, eight loop steps per centre, and the six-step loop boundary.
+`chargeFrameK_root_le` closes it against the sparse driver charge, including
+empty graphs. `exists_chargeFrameK_inputTime` chooses one natural-valued
+almost-linear time function before every graph, input, channel family, and
+word length; fixed compiler and linear boundary costs are parameters.
+Full archive build and all new axiom checks pass. Remaining assembly is
+concrete clean layout/cover, actual AUG cost comparison, and the endorsed
+headline. Augmentation rounds must be `3*S.R`; sweep radius remains `S.R`.
+
+### 2026-09-05 — scalar stage-charge comparison landed
+
+`c6c3b62` adds `SolveStageCharge`: actual clean PREP and readback are bounded
+by schedule-only coefficients times `centreWork`, exactly the existing
+restriction-plus-isolation charge. The recursive child charge is counted
+separately once. Top scatter and bottom evaluation include constant tails;
+`solveStageCoeff` is one finite constant fixed before graphs or inputs.
+Full archive build and all new theorem axiom checks pass. Next is the guarded
+recursive scalar budget and its uniform input-time consequence.
+
+### 2026-09-05 — sparse symmetrization landed
+
+Reviewed `74d27f7`, landed through `be8280d`. The real final conversion scans
+occupied arcs and their reversals for `116*M+16`, yielding exactly `D.toGraph`;
+all source/frame/length facts and the occupied-length bound are retained.
+Full archive build and axiom checks pass. Full AUG composition continues in
+the existing isolated worker tree.
+
+### 2026-09-05 — sparse build and computed-rank adapter landed
+
+Reviewed `fbf06d3`, landed through `e898e98`. `agBuildPeel_spec` composes
+padded CSR, identity-rank initialization, the real adjacency builder, and
+heap peeling to exact `mdRank`. Its budget retains the full
+`11*N+6+bldCoreK N M+KmdPeel N M`; raw allocations suffice and the source
+CSR/size cells survive. Full archive build, concrete fixed-name consumers,
+and standard-axiom checks pass. Next dependent leaf is the clean cover
+composition around the full AUG core.
+
 ### 2026-09-05 — clean PREP recursion landed
 
 Reviewed worker `f497f73` and landed through `0441d30`. `prepCleanCom`
