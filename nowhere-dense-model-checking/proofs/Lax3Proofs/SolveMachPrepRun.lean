@@ -7,7 +7,8 @@ import Lax3Proofs.SolveSeamTop
 /-!
 # F6c13 — the child-building machine pass, discharged
 
-`childLoadParts_of` discharges the complete child-building machine pass.
+`childLoadParts_of` and `childLoadPartsAll_of` discharge the complete
+child-building machine pass.
 The supports, profile, colour and isolation stages are composed below
 without a residual machine specification. The rank scratch is still zeroed
 per child and is charged honestly; the final almost-linear assembly needs
@@ -33,7 +34,7 @@ reallocation. This file discharges it with a real program:
   `htabF` is F7's parameter and F6c12p made the target canonical),
   the `genSet` indexing lemma, and the strict-mono uniqueness of the
   sorted enumeration.
-* **The five landed stage lifts** (§7): `restrictCom_specW` (the child
+* **The five landed stage lifts** (§6e–§7): `restrictCom_specW` (the child
   regions at the `(j+1)` names, the channel filtered write-once),
   `bfsCom_specW` at radius `2R` from the centre's child name,
   `supportsCom_specW` writing the NEW round's column (index `j` —
@@ -41,7 +42,7 @@ reallocation. This file discharges it with a real program:
   lists, `profilesCom_specW` at the pre-isolation child (the
   `ProfileTablesMS` witness at `preG`, the campaign's oldest hazard),
   and `isolateCom_specW` writing the final CSR at the `(j+1)` names.
-* **The colour write** (§8): the `(j+1)` colour region at
+* **The colour write** (§6d): the `(j+1)` colour region at
   `recordProfilesMS S.R childColR Dp Dc` — old colours and the marker
   copied, the profile slots thresholded off the `pd`/`pu` tables the
   profiles stage leaves.
@@ -58,13 +59,13 @@ arena. Channel columns are indexed **oldest-first**: column `e < j`
 holds `A.hist.reverse[e]`'s recorded list, column `j` is the new round's, and
 columns beyond the history are pinned empty (`hpinE`). Under this
 discipline the filtered channel lands at unchanged column indices and
-the head column is written in place — no stride conversion pass.
+the new column is written in place — no stride conversion pass.
 
 ## The scratch-cleanliness deviation (flagged)
 
 `restrictCom_specW` requires the rank scratch **clean** (`A.N` zeros),
 and the pass's fixed precondition (`CLInv`, which carries no scratch
-state) cannot supply it, so the pass zeroes the scratch itself —
+cleanliness clause) cannot supply it, so the pass zeroes the scratch itself —
 `11 * A.N + 6` per centre in `prepK`. Per the design this zeroing is
 charged once per node; threading a cleanliness clause through `CLInv`
 would remove the per-centre term but touches landed files, so it is
@@ -72,7 +73,7 @@ recorded here and priced honestly instead.
 
 ## The seam lemmas (F6c12p's mirror, §1)
 
-`cdist_eq_ballDist` and `descend_eq_cdescend`: the abstract canonical
+`cdist_eq_ballDist` and `cdescend_eq_descend`: the abstract canonical
 kit (`BatchCanon`) and the machine kit (`Prog.ballDist`,
 `Impl.descend`) are formula-identical mirrors — one filter-decidability
 transport and one well-founded induction. They are what lets F7 pin
@@ -95,7 +96,7 @@ variable {L n₀ : ℕ}
 /-! ## §0 Helpers -/
 
 /-- Reading a cell as `getElem?`, from a `getD` fact and the range. -/
-theorem getElemQ_of_getD {l : List ℕ} {i v : ℕ} (h : i < l.length)
+private theorem getElemQ_of_getD {l : List ℕ} {i v : ℕ} (h : i < l.length)
     (hg : l.getD i 0 = v) : l[i]? = some v := by
   rw [List.getElem?_eq_getElem h]
   refine congrArg some ?_
@@ -103,20 +104,20 @@ theorem getElemQ_of_getD {l : List ℕ} {i v : ℕ} (h : i < l.length)
   rfl
 
 /-- A subset of `Fin N` has at most `N` members. -/
-theorem set_ncard_le_card {N : ℕ} (X : Set (Fin N)) : X.ncard ≤ N :=
+private theorem set_ncard_le_card {N : ℕ} (X : Set (Fin N)) : X.ncard ≤ N :=
   le_of_le_of_eq
     (Set.ncard_le_ncard (Set.subset_univ _) Set.finite_univ)
     (by rw [Set.ncard_univ, Nat.card_eq_fintype_card, Fintype.card_fin])
 
 /-- A child never has an empty carrier: the centre is its own cluster
 member. -/
-theorem zero_lt_childN (S : Setup L) {Λ : ℕ} (A : Arena Λ n₀)
+private theorem zero_lt_childN (S : Setup L) {Λ : ℕ} (A : Arena Λ n₀)
     (π : Equiv.Perm (Fin A.N)) (u : Fin A.N) : 0 < childN S A π u :=
   (Set.ncard_pos (Set.toFinite _)).mpr ⟨u, self_mem_cluster S A π u⟩
 
 /-- Row-major row disjointness: a cell of row `v` is a cell of row `w`
 only for `v = w`. -/
-theorem rowCell_inj {F v w i m : ℕ} (hi : i < F) (hm : m < F)
+private theorem rowCell_inj {F v w i m : ℕ} (hi : i < F) (hm : m < F)
     (h : v * F + i = w * F + m) : v = w := by
   rcases Nat.lt_trichotomy v w with hvw | hvw | hvw
   · exfalso
@@ -134,7 +135,7 @@ open Classical in
 `N²` bound: `co[u] = base`, `co[u+1] = base + |X_u|`, the row fits the
 membership array, offsets stay `≤ N²`, and entry `t` is the `t`-th
 local name's parent name. -/
-theorem clusterRow_read {co cm : String} {N : ℕ}
+private theorem clusterRow_read {co cm : String} {N : ℕ}
     {Xf : Fin N → Set (Fin N)} {σ : Env} (h : ClusterCsr co cm Xf σ)
     (u : Fin N) :
     ∃ base : ℕ,
@@ -172,7 +173,7 @@ theorem clusterRow_read {co cm : String} {N : ℕ}
     omega
 
 /-- `Forall₂` respects append. -/
-theorem forall₂_append' {α β : Type*} {R : α → β → Prop} {l₁ l₂ : List α}
+private theorem forall₂_append' {α β : Type*} {R : α → β → Prop} {l₁ l₂ : List α}
     {u₁ u₂ : List β} (h₁ : List.Forall₂ R l₁ u₁)
     (h₂ : List.Forall₂ R l₂ u₂) :
     List.Forall₂ R (l₁ ++ l₂) (u₁ ++ u₂) := by
@@ -181,7 +182,7 @@ theorem forall₂_append' {α β : Type*} {R : α → β → Prop} {l₁ l₂ : 
   | cons h hrest ih => exact List.Forall₂.cons h ih
 
 /-- Pairing two maps of one index list under a pointwise relation. -/
-theorem forall₂_map_map {α β γ : Type*} {P : β → γ → Prop} (f : α → β)
+private theorem forall₂_map_map {α β γ : Type*} {P : β → γ → Prop} (f : α → β)
     (g : α → γ) : ∀ (l : List α), (∀ x ∈ l, P (f x) (g x)) →
     List.Forall₂ P (l.map f) (l.map g)
   | [], _ => List.Forall₂.nil
@@ -192,7 +193,7 @@ theorem forall₂_map_map {α β γ : Type*} {P : β → γ → Prop} (f : α �
 open Classical in
 /-- An all-zero prefix, in the `take`/`arrOf` shape the restrict stage
 reads. -/
-theorem take_eq_arrOf_zero {l : List ℕ} {N : ℕ} (hN : N ≤ l.length)
+private theorem take_eq_arrOf_zero {l : List ℕ} {N : ℕ} (hN : N ≤ l.length)
     (h : ∀ p, p < N → l.getD p 0 = 0) :
     l.take N = arrOf N (fun _ => 0) := by
   refine List.ext_getElem (by simp [hN]) ?_
@@ -212,7 +213,7 @@ theorem take_eq_arrOf_zero {l : List ℕ} {N : ℕ} (hN : N ≤ l.length)
   exact hgd
 
 /-- The degree sum of a graph on `Fin N` is at most `N²`. -/
-theorem degSum_le_sq {N : ℕ} (G : SimpleGraph (Fin N))
+private theorem degSum_le_sq {N : ℕ} (G : SimpleGraph (Fin N))
     [DecidableRel G.Adj] : (∑ v : Fin N, G.degree v) ≤ N * N := by
   calc (∑ v : Fin N, G.degree v)
       ≤ ∑ _v : Fin N, N := by
@@ -231,7 +232,7 @@ theorem degSum_le_sq {N : ℕ} (G : SimpleGraph (Fin N))
 word depths: the stride arithmetic is plain and the per-cell lists are
 pointwise equal, so the stored region satisfies the contract at either
 indexing. -/
-theorem histArr_reindex {aN : String} {N ℓ1 ℓ2 hb1 hb2 : ℕ}
+private theorem histArr_reindex {aN : String} {N ℓ1 ℓ2 hb1 hb2 : ℕ}
     (hℓ : ℓ2 = ℓ1) (hhb : hb2 = hb1)
     {h1 : Fin N → Fin ℓ1 → List (Fin N)}
     {h2 : Fin N → Fin ℓ2 → List (Fin N)}
@@ -249,7 +250,7 @@ theorem histArr_reindex {aN : String} {N ℓ1 ℓ2 hb1 hb2 : ℕ}
 /-- A tagged name never equals a plain name of its base's length unless
 it is the base itself at level `0` — the one-shot form of `lv_not_mem`
 for a single disequality. -/
-theorem lv_ne_lit {s t : String} (hlen : t.length = s.length) (hst : s ≠ t)
+private theorem lv_ne_lit {s t : String} (hlen : t.length = s.length) (hst : s ≠ t)
     (j : ℕ) : lv s j ≠ t := by
   intro h
   have h1 := congrArg String.length h
@@ -260,7 +261,7 @@ theorem lv_ne_lit {s t : String} (hlen : t.length = s.length) (hst : s ≠ t)
 
 open Classical in
 /-- Isolation never adds edges: the degree sum only drops. -/
-theorem degSum_deleteVerts_le {N : ℕ} (G : SimpleGraph (Fin N))
+private theorem degSum_deleteVerts_le {N : ℕ} (G : SimpleGraph (Fin N))
     (W : Set (Fin N)) :
     (∑ v : Fin N, (Lax12.UniformQuasiWideness.deleteVerts G W).degree v)
       ≤ ∑ v : Fin N, G.degree v := by
@@ -280,7 +281,7 @@ theorem degSum_deleteVerts_le {N : ℕ} (G : SimpleGraph (Fin N))
 word depths at fixed carrier, graph, colours and renaming: the region
 data is identical cell for cell, so the contract holds at either
 indexing (the level boundary's `ℓp (j+1) = ℓp j` transport). -/
-theorem arenaStW_cast {nm : ArenaNames} {Λ n₀ kk ℓ1 ℓ2 hb1 hb2 : ℕ}
+private theorem arenaStW_cast {nm : ArenaNames} {Λ n₀ kk ℓ1 ℓ2 hb1 hb2 : ℕ}
     (hℓ : ℓ2 = ℓ1) (hhb : hb2 = hb1)
     {G : SimpleGraph (Fin kk)} {col : Coloring kk Λ} {up : Fin kk ↪ Fin n₀}
     {h1 : Fin kk → Fin ℓ1 → List (Fin kk)}
@@ -302,7 +303,7 @@ open Classical in
 rows move to a fresh region at a new palette — the CSR pair, the
 renaming and the channel carry over unchanged, the new colour region
 enters by its allocation length and bit facts. -/
-theorem arenaStW_retarget_col {nm : ArenaNames} {Λ1 Λ2 n₀ ℓpc : ℕ} {hb : ℕ}
+private theorem arenaStW_retarget_col {nm : ArenaNames} {Λ1 Λ2 n₀ ℓpc : ℕ} {hb : ℕ}
     {A : Impl.MArena Λ1 n₀ ℓpc} {σ : Env}
     (h : ArenaStW nm hb A σ) (colN : String) (col2 : Coloring A.N Λ2)
     (hnd : ([nm.off, nm.tgt, nm.col, nm.up, nm.hist] : List String).Nodup)
@@ -404,7 +405,7 @@ canonical `htabF` to this file's machine channel. -/
 open Classical in
 /-- The canonical truncated distance tables agree: `BatchCanon.cdist`
 IS `Prog.ballDist` at `Fin N`. -/
-theorem cdist_eq_ballDist {N : ℕ} (H : SimpleGraph (Fin N)) (s : Fin N)
+private theorem cdist_eq_ballDist {N : ℕ} (H : SimpleGraph (Fin N)) (s : Fin N)
     (d : ℕ) : Lax3Proofs.BatchCanon.cdist H s d = ballDist H s d := by
   funext v
   rw [Lax3Proofs.BatchCanon.cdist, ballDist]
@@ -412,7 +413,7 @@ theorem cdist_eq_ballDist {N : ℕ} (H : SimpleGraph (Fin N)) (s : Fin N)
 open Classical in
 /-- The parent candidate sets agree (a filter-decidability
 transport). -/
-theorem cparents_eq_parents {N : ℕ} (H : SimpleGraph (Fin N))
+private theorem cparents_eq_parents {N : ℕ} (H : SimpleGraph (Fin N))
     [DecidableRel H.Adj] (D : Fin N → ℕ) (v : Fin N) :
     Lax3Proofs.BatchCanon.cparents H D v = Impl.parents H D v := by
   ext x
@@ -422,7 +423,7 @@ open Classical in
 /-- The canonical gradient walks agree: `BatchCanon.cdescend` IS
 `Impl.descend` at `Fin N` — one well-founded induction down the
 distance gradient. -/
-theorem cdescend_eq_descend {N : ℕ} (H : SimpleGraph (Fin N))
+private theorem cdescend_eq_descend {N : ℕ} (H : SimpleGraph (Fin N))
     [DecidableRel H.Adj] (D : Fin N → ℕ) (v : Fin N) :
     Lax3Proofs.BatchCanon.cdescend H D v = Impl.descend H D v := by
   have hpar := cparents_eq_parents H D v
@@ -449,7 +450,7 @@ decreasing_by
 
 The child's per-round column family, canonically (the shape
 `descendTab` had, at the F6c12p objects), oldest-first: column
-`e < ℓp j` short of the head holds the parent's pinned round-`e` list
+`e < ℓp j` other than `j` holds the parent's pinned round-`e` list
 filtered to the cluster and renamed through the sorted compaction
 (write-once-filter-down — `Impl.MArena.restrict`'s own filterMap);
 column `j` (the new round) holds the canonical gradient list of the
@@ -481,10 +482,102 @@ noncomputable def prepChan (S : Setup L) (ord : CoverSpec.OrderingRoutine)
         (Impl.toLocal (cluster S A ((ord A.N A.G).order) u))
     else []
 
+open Classical in
+private theorem prepDescendCol_eq_pathList {N : ℕ} (G : SimpleGraph (Fin N))
+    (s : Fin N) (d : ℕ) (v : Fin N) :
+    descendCol G (ballDist G s d) d v = Lax3Proofs.BatchCanon.pathList G d s v := by
+  have hiff : ballDist G s d v ≤ d ↔ WithinDist G d s v :=
+    ((ballDist_ballTable G s d) v d le_rfl).trans mem_ball
+  rw [descendCol, Lax3Proofs.BatchCanon.pathList, cdist_eq_ballDist]
+  rw [← cdescend_eq_descend]
+  exact if_congr hiff rfl rfl
+open Classical in
+private theorem prepMemFilterMapLocal {N : ℕ} (X : Set (Fin N))
+    (l : List (Fin N)) (z : Fin X.ncard) :
+    z ∈ l.filterMap (Impl.toLocal X) ↔ Impl.restrictEmb X z ∈ l := by
+  have hm : ∀ l' : List (Fin X.ncard), z ∈ l' ↔
+      Impl.restrictEmb X z ∈ l'.map (Impl.restrictEmb X) := by
+    intro l'
+    constructor
+    · intro hz; exact List.mem_map.mpr ⟨z, hz, rfl⟩
+    · rintro hz
+      obtain ⟨a, ha, h⟩ := List.mem_map.mp hz
+      exact (Impl.restrictEmb X).injective h ▸ ha
+  rw [hm, Impl.map_restrictEmb_filterMap_toLocal, List.mem_filter]
+  simp
+
+open Classical in
+/-- The new column uses the newly recorded graph at root names. -/
+theorem prepChan_new_pin (S : Setup L) (ord : CoverSpec.OrderingRoutine)
+    (ℓp : ℕ → ℕ)
+    (htabF : (j : ℕ) → (A : Arena (S.pal j) n₀) →
+      Fin A.N → Fin (ℓp j) → List (Fin A.N))
+    (j : ℕ) (A : Arena (S.pal j) n₀) (u : Fin A.N)
+    (hmono : StrictMono A.up) (hj : j < ℓp (j + 1))
+    (v z : Fin (childN S A ((ord A.N A.G).order) u)) :
+    z ∈ prepChan S ord ℓp htabF j A u v ⟨j, hj⟩ ↔
+      (childArena S A ((ord A.N A.G).order) u).up z ∈
+        Lax3Proofs.SplitterWin.pathSet
+          (histGraph S A ((ord A.N A.G).order) u) (2 * S.R) (A.up u)
+          ((childArena S A ((ord A.N A.G).order) u).up v) := by
+  let π := (ord A.N A.G).order
+  let f := (childArena S A π u).up
+  have hcentre : f (centreChild S A π u) = A.up u := by
+    change A.up ((childEquiv S A π u) ((childEquiv S A π u).symm
+      ⟨u, self_mem_cluster S A π u⟩) : Fin A.N) = A.up u
+    rw [Equiv.apply_symm_apply]
+  have hmap : histGraph S A π u = (preG S A π u).map f := histGraph_eq_map S A π u
+  change z ∈ prepChan S ord ℓp htabF j A u v ⟨j, hj⟩ ↔
+    f z ∈ Lax3Proofs.BatchCanon.pathList (histGraph S A π u) (2 * S.R) (A.up u) (f v)
+  rw [prepChan, if_pos rfl, prepDescendCol_eq_pathList, hmap, ← hcentre,
+    Lax3Proofs.BatchCanon.pathList_map f (childArena_up_strictMono S A π u hmono)]
+  constructor
+  · intro hz; exact List.mem_map.mpr ⟨z, hz, rfl⟩
+  · intro hz
+    obtain ⟨a, ha, h⟩ := List.mem_map.mp hz
+    exact f.injective h ▸ ha
+
+open Classical in
+/-- An old column retains its history index under restriction. -/
+theorem prepChan_old_pin (S : Setup L) (ord : CoverSpec.OrderingRoutine)
+    (ℓp : ℕ → ℕ)
+    (htabF : (j : ℕ) → (A : Arena (S.pal j) n₀) →
+      Fin A.N → Fin (ℓp j) → List (Fin A.N))
+    (j : ℕ) (A : Arena (S.pal j) n₀) (u : Fin A.N)
+    (hLen : A.hist.length = j) (hlp : ℓp (j + 1) = ℓp j)
+    (hpin : ∀ (v : Fin A.N) (e : Fin (ℓp j)) (he : (e : ℕ) < A.hist.length)
+      (z : Fin A.N), z ∈ htabF j A v e ↔
+        (A.up z) ∈ Lax3Proofs.SplitterWin.pathSet
+          (A.hist.reverse[(e : ℕ)]'(by simpa using he)).2 (2 * S.R)
+          (A.hist.reverse[(e : ℕ)]'(by simpa using he)).1 (A.up v))
+    (v z : Fin (childN S A ((ord A.N A.G).order) u))
+    (e : Fin (ℓp (j + 1))) (he : (e : ℕ) < j) :
+    z ∈ prepChan S ord ℓp htabF j A u v e ↔
+      (childArena S A ((ord A.N A.G).order) u).up z ∈
+        Lax3Proofs.SplitterWin.pathSet
+          ((childArena S A ((ord A.N A.G).order) u).hist.reverse[(e : ℕ)]'(by
+            simp only [childArena, List.length_reverse, List.length_cons, hLen]; omega)).2
+          (2 * S.R)
+          ((childArena S A ((ord A.N A.G).order) u).hist.reverse[(e : ℕ)]'(by
+            simp only [childArena, List.length_reverse, List.length_cons, hLen]; omega)).1
+          ((childArena S A ((ord A.N A.G).order) u).up v) := by
+  have hel : (e : ℕ) < ℓp j := by rw [← hlp]; exact e.2
+  have heh : (e : ℕ) < A.hist.length := by omega
+  have hrev : ((childArena S A ((ord A.N A.G).order) u).hist.reverse[(e : ℕ)]'(by
+      simp only [childArena, List.length_reverse, List.length_cons, hLen]; omega)) =
+      A.hist.reverse[(e : ℕ)]'(by simpa using heh) := by
+    simp only [childArena, List.reverse_cons]
+    exact List.getElem_append_left (by simpa using heh)
+  rw [prepChan, if_neg (by omega), dif_pos hel]
+  refine (prepMemFilterMapLocal (cluster S A ((ord A.N A.G).order) u)
+    (htabF j A (Impl.restrictEmb _ v) ⟨(e : ℕ), hel⟩) z).trans ?_
+  rw [hrev]
+  exact hpin (Impl.restrictEmb _ v) ⟨(e : ℕ), hel⟩ heh (Impl.restrictEmb _ z)
+
 /-! ## §3 The batch, from the pinned channel -/
 
 /-- Membership in `genSet`, by round index. -/
-theorem mem_genSet_iff {n : ℕ} {r : ℕ}
+private theorem mem_genSet_iff {n : ℕ} {r : ℕ}
     (rounds : List (Lax3Proofs.SplitterWin.Round n)) (v x : Fin n) :
     x ∈ Lax3Proofs.SplitterWin.genSet r rounds v ↔
       x = v ∨ ∃ i : ℕ, ∃ hi : i < rounds.length,
@@ -536,7 +629,7 @@ private theorem prepGenSet_reverse {n r : ℕ}
 
 open Classical in
 /-- The stored oldest-first channel marks exactly the abstract batch. -/
-theorem marks_eq_batchSet (S : Setup L) {Λ : ℕ} (A : Arena Λ n₀)
+private theorem marks_eq_batchSet (S : Setup L) {Λ : ℕ} (A : Arena Λ n₀)
     (π : Equiv.Perm (Fin A.N)) (u : Fin A.N)
     {ℓpj : ℕ} (htab : Fin A.N → Fin ℓpj → List (Fin A.N))
     (hpin : ∀ (e : Fin ℓpj) (he : (e : ℕ) < A.hist.length) (z : Fin A.N),
@@ -577,7 +670,7 @@ theorem marks_eq_batchSet (S : Setup L) {Λ : ℕ} (A : Arena Λ n₀)
 
 /-- Two strictly monotone `Fin`-enumerations with the same range are
 equal (the least element is forced, and so on up). -/
-theorem strictMono_fin_eq {m k : ℕ} {f g : Fin m → Fin k}
+private theorem strictMono_fin_eq {m k : ℕ} {f g : Fin m → Fin k}
     (hf : StrictMono f) (hg : StrictMono g)
     (hr : Set.range f = Set.range g) : f = g := by
   induction m with
@@ -596,7 +689,7 @@ theorem strictMono_fin_eq {m k : ℕ} {f g : Fin m → Fin k}
       rw [hi'] at h2
       exact le_antisymm h2 h1
     -- the tails
-    have htail : (fun i : Fin m => f i.succ) = fun i : Fin m => g i.succ := by
+    have hsucc : (fun i : Fin m => f i.succ) = fun i : Fin m => g i.succ := by
       refine ih (fun a b hab => hf (by simpa using hab))
         (fun a b hab => hg (by simpa using hab)) ?_
       ext x
@@ -648,13 +741,13 @@ theorem strictMono_fin_eq {m k : ℕ} {f g : Fin m → Fin k}
     funext i
     rcases Fin.eq_zero_or_eq_succ i with rfl | ⟨i', rfl⟩
     · exact h0
-    · exact congrFun htail i'
+    · exact congrFun hsucc i'
 
 open Classical in
 /-- **The scan is the sorted enumeration**: a strictly increasing
 sequence of `m = |X|` cell values that lies in `X` and exhausts it is
 exactly `setEquiv`'s ascending enumeration. -/
-theorem scan_eq_setEquiv {k : ℕ} (X : Set (Fin k)) (w : ℕ → ℕ)
+private theorem scan_eq_setEquiv {k : ℕ} (X : Set (Fin k)) (w : ℕ → ℕ)
     (hbound : ∀ p, p < X.ncard → w p < k)
     (hmono : ∀ p q, p < q → q < X.ncard → w p < w q)
     (hmem : ∀ p, ∀ hp : p < X.ncard, (⟨w p, hbound p hp⟩ : Fin k) ∈ X)
@@ -859,19 +952,19 @@ def prepSupportsCom (j : ℕ) (R2 lpj hbj : ℕ) : Com :=
                 (arenaNames (j + 1)).hist))))))
 
 /-- The `pd`-slot index pairs, in writer order. -/
-def pdIdx (S : Setup L) : List (Fin S.width × Fin (S.R + 1)) :=
+private def pdIdx (S : Setup L) : List (Fin S.width × Fin (S.R + 1)) :=
   (List.finRange S.width).flatMap fun b : Fin S.width =>
     (List.finRange (S.R + 1)).map fun a : Fin (S.R + 1) => (b, a)
 
 /-- The `pu`-slot index pairs, in writer order. -/
-def puIdx (S : Setup L) (j : ℕ) :
+private def puIdx (S : Setup L) (j : ℕ) :
     List (Fin (relPal (S.pal j)) × Fin (S.R + 1)) :=
   (List.finRange (relPal (S.pal j))).flatMap
     fun c : Fin (relPal (S.pal j)) =>
     (List.finRange (S.R + 1)).map fun b : Fin (S.R + 1) => (c, b)
 
 /-- One old-colour writer. -/
-def colWOld (S : Setup L) (j : ℕ) (c : Fin (S.pal j)) : Com :=
+private def colWOld (S : Setup L) (j : ℕ) (c : Fin (S.pal j)) : Com :=
   Com.store (arenaNames (j + 1)).col
     (.add (.mul (.var "cp.i") (.lit (S.pal (j + 1))))
       (.lit ((isoOld (Λ := relPal (S.pal j)) (mb := S.width)
@@ -880,7 +973,7 @@ def colWOld (S : Setup L) (j : ℕ) (c : Fin (S.pal j)) : Com :=
       (.add (.mul (.var "cp.i") (.lit (S.pal j))) (.lit (c : ℕ))))
 
 /-- The marker writer. -/
-def colWMarker (S : Setup L) (j : ℕ) : Com :=
+private def colWMarker (S : Setup L) (j : ℕ) : Com :=
   Com.store (arenaNames (j + 1)).col
     (.add (.mul (.var "cp.i") (.lit (S.pal (j + 1))))
       (.lit ((isoOld (Λ := relPal (S.pal j)) (mb := S.width)
@@ -888,7 +981,7 @@ def colWMarker (S : Setup L) (j : ℕ) : Com :=
     (.lit 1)
 
 /-- One batch-profile writer. -/
-def colWPd (S : Setup L) (j : ℕ) (p : Fin S.width × Fin (S.R + 1)) : Com :=
+private def colWPd (S : Setup L) (j : ℕ) (p : Fin S.width × Fin (S.R + 1)) : Com :=
   Com.ite (.lt (.lit ((p.2 : ℕ)))
       (.get (lv "cq.d" ((p.1 : ℕ))) (.var "cp.i")))
     (Com.store (arenaNames (j + 1)).col
@@ -903,7 +996,7 @@ def colWPd (S : Setup L) (j : ℕ) (p : Fin S.width × Fin (S.R + 1)) : Com :=
       (.lit 1))
 
 /-- One colour-profile writer. -/
-def colWPu (S : Setup L) (j : ℕ)
+private def colWPu (S : Setup L) (j : ℕ)
     (p : Fin (relPal (S.pal j)) × Fin (S.R + 1)) : Com :=
   Com.ite (.lt (.lit ((p.2 : ℕ) + 1))
       (.get (lv "cq.u" ((p.1 : ℕ))) (.var "cp.i")))
@@ -922,14 +1015,14 @@ def colWPu (S : Setup L) (j : ℕ)
 `(j+1)` palette — old colours read off the pre-isolation rows, the
 marker constant, the `pd`/`pu` slots thresholded off the profile
 tables. -/
-def colWriters (S : Setup L) (j : ℕ) : List Com :=
+private def colWriters (S : Setup L) (j : ℕ) : List Com :=
   ((List.finRange (S.pal j)).map (colWOld S j))
   ++ [colWMarker S j]
   ++ ((pdIdx S).map (colWPd S j))
   ++ ((puIdx S j).map (colWPu S j))
 
 /-- The writers' slots, in writer order. -/
-def colSlots (S : Setup L) (j : ℕ) :
+private def colSlots (S : Setup L) (j : ℕ) :
     List (Fin (isoPal (relPal (S.pal j)) S.width S.R)) :=
   ((List.finRange (S.pal j)).map fun c =>
     isoOld (Λ := relPal (S.pal j)) (mb := S.width) (cap := S.R) c.castSucc)
@@ -942,7 +1035,7 @@ def colSlots (S : Setup L) (j : ℕ) :
 
 /-- **Every slot has a writer**: the four chunks enumerate the whole
 isolation palette. -/
-theorem colSlots_covers (S : Setup L) (j : ℕ)
+private theorem colSlots_covers (S : Setup L) (j : ℕ)
     (d : Fin (isoPal (relPal (S.pal j)) S.width S.R)) :
     d ∈ colSlots S j := by
   have hd : isoEnc (relPal (S.pal j)) S.width S.R
@@ -979,7 +1072,7 @@ theorem colSlots_covers (S : Setup L) (j : ℕ)
       List.mem_map.mpr ⟨b, List.mem_finRange b, rfl⟩⟩
 
 /-- One row of the colour write, sequenced. -/
-noncomputable def colRowCom (S : Setup L) (j : ℕ) : Com :=
+private noncomputable def colRowCom (S : Setup L) (j : ℕ) : Com :=
   (colWriters S j).foldr .seq .skip
 
 /-- §5k — the colour write: per carrier row, the compile-time writer
@@ -1083,7 +1176,7 @@ theorem prepK_coe (S : Setup L) (ord : CoverSpec.OrderingRoutine)
 
 /-! ## §6b The write sets -/
 
-theorem warrs_colWriters {S : Setup L} {j : ℕ} :
+private theorem warrs_colWriters {S : Setup L} {j : ℕ} :
     ∀ c ∈ colWriters S j, ∀ b ∈ c.warrs, b = (arenaNames (j + 1)).col := by
   intro c hc
   simp only [colWriters, List.mem_append, List.mem_map,
@@ -1097,7 +1190,7 @@ theorem warrs_colWriters {S : Setup L} {j : ℕ} :
         | exact hb
         | (rcases hb with hb | hb <;> exact hb)
 
-theorem warrs_colRowCom {S : Setup L} {j : ℕ} :
+private theorem warrs_colRowCom {S : Setup L} {j : ℕ} :
     ∀ b ∈ (colRowCom S j).warrs, b = (arenaNames (j + 1)).col := by
   rw [colRowCom]
   generalize hl : colWriters S j = l
@@ -1113,7 +1206,7 @@ theorem warrs_colRowCom {S : Setup L} {j : ℕ} :
     · exact hall c (List.mem_cons_self ..) b hb
     · exact ih (fun c' hc' => hall c' (List.mem_cons_of_mem _ hc')) b hb
 
-theorem wvars_colWriters {S : Setup L} {j : ℕ} :
+private theorem wvars_colWriters {S : Setup L} {j : ℕ} :
     ∀ c ∈ colWriters S j, c.wvars = [] := by
   intro c hc
   simp only [colWriters, List.mem_append, List.mem_map,
@@ -1121,7 +1214,7 @@ theorem wvars_colWriters {S : Setup L} {j : ℕ} :
   rcases hc with ((⟨x, -, rfl⟩ | rfl) | ⟨x, -, rfl⟩) | ⟨x, -, rfl⟩ <;>
     simp [colWOld, colWMarker, colWPd, colWPu, Com.wvars]
 
-theorem wvars_colRowCom {S : Setup L} {j : ℕ} :
+private theorem wvars_colRowCom {S : Setup L} {j : ℕ} :
     (colRowCom S j).wvars = [] := by
   rw [colRowCom]
   generalize hl : colWriters S j = l
@@ -2829,7 +2922,7 @@ variable {L : ℕ} (S : Setup L) (j : ℕ) {kk : ℕ}
 
 open Classical in
 /-- The row's target bit at one slot. -/
-noncomputable def colBit (d : Fin (isoPal (relPal (S.pal j)) S.width S.R)) :
+private noncomputable def colBit (d : Fin (isoPal (relPal (S.pal j)) S.width S.R)) :
     ℕ :=
   if (⟨a, ha⟩ : Fin kk) ∈
       Impl.recordProfilesMS S.R (relColoring f0 Set.univ) Dp Dc d
@@ -2839,7 +2932,7 @@ open Classical in
 /-- **The row-state precondition** the writers read: the counter at the
 row, the pre-isolation colour cells, the profile-table cells, the
 allocation room, and the word bounds. -/
-def ColRowPre (B : ℕ) (σ : Env) : Prop :=
+private def ColRowPre (B : ℕ) (σ : Env) : Prop :=
   σ.vars "cp.i" = a ∧
   (∀ c : Fin (S.pal j),
     (σ.arrs "cp.c").getD (a * S.pal j + (c : ℕ)) 0
@@ -2863,7 +2956,7 @@ def ColRowPre (B : ℕ) (σ : Env) : Prop :=
 open Classical in
 /-- `ColRowPre` survives a store into the colour region (it reads
 other regions and one counter only). -/
-theorem colRowPre_setArr {B : ℕ} {σ : Env} (h : ColRowPre S j f0 Dp Dc a ha B σ)
+private theorem colRowPre_setArr {B : ℕ} {σ : Env} (h : ColRowPre S j f0 Dp Dc a ha B σ)
     (hcol1 : (arenaNames (j + 1)).col ≠ "cp.c")
     (hcol2 : ∀ i, (arenaNames (j + 1)).col ≠ lv "cq.d" i)
     (hcol3 : ∀ i, (arenaNames (j + 1)).col ≠ lv "cq.u" i)
@@ -2899,7 +2992,7 @@ open Classical in
 slot list, each writer runs from any `ColRowPre` state to the same
 state with its slot's colour cell set to that slot's
 `recordProfilesMS` bit, within the uniform per-writer budget. -/
-theorem colWriters_forall₂ {B : ℕ} :
+private theorem colWriters_forall₂ {B : ℕ} :
     List.Forall₂
       (fun w (dd : Fin (isoPal (relPal (S.pal j)) S.width S.R)) =>
         ∀ σ, ColRowPre S j f0 Dp Dc a ha B σ →
@@ -3180,7 +3273,7 @@ open Classical in
 list ends at its bit; unnamed cells, other arrays and every scalar are
 untouched. Duplicated slots are harmless — every writer of a slot
 writes that slot's bit. -/
-theorem writersRun {B : ℕ} {colC : String} {base : ℕ}
+private theorem writersRun {B : ℕ} {colC : String} {base : ℕ}
     {bit : ℕ → ℕ} {P : Env → Prop}
     (hP : ∀ σ, P σ → ∀ p v, P (σ.setArr colC p v)) :
     ∀ {l : List Com} {D : List ℕ},
@@ -3244,7 +3337,7 @@ theorem writersRun {B : ℕ} {colC : String} {base : ℕ}
     · rw [hvars', vars_setArr]
 
 /-- `Forall₂` against a mapped right list. -/
-theorem forall₂_map_right' {α β γ : Type*} {P : α → γ → Prop} (g : β → γ) :
+private theorem forall₂_map_right' {α β γ : Type*} {P : α → γ → Prop} (g : β → γ) :
     ∀ {l : List α} {u : List β},
       List.Forall₂ (fun x y => P x (g y)) l u →
       List.Forall₂ P l (u.map g) := by
@@ -3254,7 +3347,7 @@ theorem forall₂_map_right' {α β γ : Type*} {P : α → γ → Prop} (g : β
   | cons h hrest ih => exact List.Forall₂.cons h ih
 
 /-- The writer list has one writer per palette slot. -/
-theorem length_colWriters (S : Setup L) (j : ℕ) :
+private theorem length_colWriters (S : Setup L) (j : ℕ) :
     (colWriters S j).length = S.pal (j + 1) := by
   have h1 : (pdIdx S).length = S.width * (S.R + 1) := by
     rw [pdIdx, List.length_flatMap]
@@ -3295,7 +3388,7 @@ open Classical in
 precondition, the writer sequence lands the whole row at
 `recordProfilesMS`'s bits — every slot covered, everything else
 untouched. -/
-theorem colRow_run {B : ℕ} (a : ℕ) (ha : a < kk)
+private theorem colRow_run {B : ℕ} (a : ℕ) (ha : a < kk)
     (hcol1 : (arenaNames (j + 1)).col ≠ "cp.c")
     (hcol2 : ∀ i, (arenaNames (j + 1)).col ≠ lv "cq.d" i)
     (hcol3 : ∀ i, (arenaNames (j + 1)).col ≠ lv "cq.u" i)
@@ -3613,7 +3706,7 @@ stage's door — the pre-isolation child at the scratch names, the two
 size cells, the canonical `2R`-ball table in the distance scratch, the
 padded batch in the width scratch, the batch indicator in the bit
 scratch, and the allocation room the four remaining stages consume. -/
-def PrepMid (S : Setup L) (ord : CoverSpec.OrderingRoutine) (ℓp : ℕ → ℕ)
+private def PrepMid (S : Setup L) (ord : CoverSpec.OrderingRoutine) (ℓp : ℕ → ℕ)
     (htabF : (j : ℕ) → (A : Arena (S.pal j) n₀) →
       Fin A.N → Fin (ℓp j) → List (Fin A.N))
     (hbf : ℕ → ℕ) (j : ℕ) (A : Arena (S.pal j) n₀) (u : Fin A.N)
@@ -5136,5 +5229,234 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
+
+/-! ## §8 The headline and the admissible channel seam -/
+open Classical in
+/-- The complete pass at every admissible encoded input, with the verbatim
+`ChildLoadPartsAll` conclusion. -/
+theorem childLoadPartsAll_of (C : GraphClass) (hC : NowhereDense C) (φ : FO 0)
+    (ord : CoverSpec.OrderingRoutine) {n : ℕ} (G : SimpleGraph (Fin n))
+    (c w q : ℕ) (ℓp : ℕ → ℕ)
+    (htabF : (j : ℕ) →
+      (A : Arena ((Headline.headlineSetup C hC φ).pal j) n) →
+      Fin A.N → Fin (ℓp j) → List (Fin A.N))
+    (hbf : ℕ → ℕ)
+    (Adm : (j : ℕ) → Arena ((Headline.headlineSetup C hC φ).pal j) n → Prop)
+    (Scr : ℕ → Env → Prop) (ca co cm : ℕ → String)
+    -- the constant-`ℓp` discipline (F7 owns both parameters)
+    (hlpEq : ∀ j, j + 1 ≤ (Headline.headlineSetup C hC φ).depth → ℓp (j + 1) = ℓp j)
+    (hhbEq : ∀ j, j + 1 ≤ (Headline.headlineSetup C hC φ).depth → hbf (j + 1) = hbf j)
+    (hlpRoom : ∀ j, j + 1 ≤ (Headline.headlineSetup C hC φ).depth → j < ℓp j)
+    (hhbR : ∀ j, j + 1 ≤ (Headline.headlineSetup C hC φ).depth → 2 * (Headline.headlineSetup C hC φ).R + 1 ≤ hbf j)
+    -- the admissible history shape and the channel-pinning seam
+    (hAdmLen : ∀ j (A : Arena ((Headline.headlineSetup C hC φ).pal j) n), Adm j A → A.hist.length = j)
+    (hpin : ∀ j (A : Arena ((Headline.headlineSetup C hC φ).pal j) n), Adm j A →
+      ∀ (v : Fin A.N) (e : Fin (ℓp j)) (he : (e : ℕ) < A.hist.length)
+        (z : Fin A.N),
+        z ∈ htabF j A v e ↔ (A.up z) ∈ Lax3Proofs.SplitterWin.pathSet
+          (A.hist.reverse[(e : ℕ)]'(by simpa using he)).2 (2 * (Headline.headlineSetup C hC φ).R)
+          (A.hist.reverse[(e : ℕ)]'(by simpa using he)).1 (A.up v))
+    (hpinE : ∀ j (A : Arena ((Headline.headlineSetup C hC φ).pal j) n), Adm j A →
+      ∀ (v : Fin A.N) (e : Fin (ℓp j)), A.hist.length ≤ (e : ℕ) →
+        htabF j A v e = [])
+    -- the batch fits the width
+    (hwidth : ∀ j, j + 1 ≤ (Headline.headlineSetup C hC φ).depth → 1 + j * (2 * (Headline.headlineSetup C hC φ).R + 1) ≤ (Headline.headlineSetup C hC φ).width)
+    (hq : 1 ≤ q)
+    (hB : ∀ x ∈ mcD n G c w,
+      n < mcB q x ∧ n * n < mcB q x ∧ n + 2 < mcB q x ∧
+      n * n + 2 * n + 1 < mcB q x ∧
+      (Headline.headlineSetup C hC φ).depth < mcB q x ∧
+      2 * (Headline.headlineSetup C hC φ).R + 3 < mcB q x ∧
+      (Headline.headlineSetup C hC φ).width < mcB q x)
+    (hlpB : ∀ x ∈ mcD n G c w, ∀ j ≤ (Headline.headlineSetup C hC φ).depth,
+      ℓp j < mcB q x)
+    (hhbB : ∀ x ∈ mcD n G c w, ∀ j ≤ (Headline.headlineSetup C hC φ).depth,
+      hbf j + 1 < mcB q x)
+    (hhistB : ∀ x ∈ mcD n G c w, ∀ j ≤ (Headline.headlineSetup C hC φ).depth,
+      n * ℓp j * (hbf j + 1) < mcB q x)
+    (hpalB : ∀ x ∈ mcD n G c w, ∀ j ≤ (Headline.headlineSetup C hC φ).depth,
+      n * (Headline.headlineSetup C hC φ).pal j < mcB q x)
+    -- the scratch descriptor's length clauses
+    (hscrA : ∀ j' σ, Scr j' σ →
+      n ≤ (σ.arrs "cp.l").length ∧ n ≤ (σ.arrs "cp.r").length ∧
+      n ≤ (σ.arrs "cp.b").length ∧ n ≤ (σ.arrs "cp.d").length ∧
+      n ≤ (σ.arrs "cp.p").length ∧ n ≤ (σ.arrs "cp.x").length ∧
+      n + 2 ≤ (σ.arrs "cp.v").length ∧
+      (σ.arrs "cp.w").length = (Headline.headlineSetup C hC φ).width ∧
+      n + 1 ≤ (σ.arrs "cp.o").length ∧
+      n * n ≤ (σ.arrs "cp.t").length ∧
+      n * (Headline.headlineSetup C hC φ).pal j' ≤ (σ.arrs "cp.c").length ∧
+      (∀ i, i < (Headline.headlineSetup C hC φ).width → n ≤ (σ.arrs (lv "cq.d" i)).length) ∧
+      (∀ c, c < (Headline.headlineSetup C hC φ).pal j' →
+        n * n + 2 * n ≤ (σ.arrs (lv "cq.v" c)).length) ∧
+      (∀ c, c < (Headline.headlineSetup C hC φ).pal j' + 1 → n + 1 ≤ (σ.arrs (lv "cq.u" c)).length))
+    (hscrLvl : ∀ j', j' + 1 ≤ (Headline.headlineSetup C hC φ).depth → ∀ σ, Scr j' σ →
+      n + 1 ≤ (σ.arrs (arenaNames (j' + 1)).off).length ∧
+      n * n ≤ (σ.arrs (arenaNames (j' + 1)).tgt).length ∧
+      n * (Headline.headlineSetup C hC φ).pal (j' + 1) ≤ (σ.arrs (arenaNames (j' + 1)).col).length ∧
+      n ≤ (σ.arrs (arenaNames (j' + 1)).up).length ∧
+      n * ℓp j' * (hbf j' + 1)
+        ≤ (σ.arrs (arenaNames (j' + 1)).hist).length)
+    -- cover-name freshness
+    (hcovA : ∀ jc j', ca jc ∉ levelArrays j' ∧ co jc ∉ levelArrays j' ∧
+      cm jc ∉ levelArrays j')
+    (hcovP : ∀ jc, (ca jc ∉ prepArrays ∧ co jc ∉ prepArrays ∧
+        cm jc ∉ prepArrays) ∧
+      ∀ i, (ca jc ≠ lv "cq.d" i ∧ ca jc ≠ lv "cq.v" i ∧
+          ca jc ≠ lv "cq.u" i) ∧
+        (co jc ≠ lv "cq.d" i ∧ co jc ≠ lv "cq.v" i ∧
+          co jc ≠ lv "cq.u" i) ∧
+        (cm jc ≠ lv "cq.d" i ∧ cm jc ≠ lv "cq.v" i ∧
+          cm jc ≠ lv "cq.u" i))
+ :
+    ChildLoadPartsAll C hC φ ord G c w q ℓp htabF hbf Adm Scr ca co cm
+      (prepCom (Headline.headlineSetup C hC φ) ℓp hbf co cm)
+      (prepChan (Headline.headlineSetup C hC φ) ord ℓp htabF)
+      (fun _ j A u => prepK (Headline.headlineSetup C hC φ) ord ℓp hbf j A u) := by
+  intro x hx
+  obtain ⟨hnB, hnnB, hn2B, hbigB, hdB, hRB, hwB⟩ := hB x hx
+  exact childLoadParts_of (mcB q x) (Headline.headlineSetup C hC φ)
+    ord ℓp htabF hbf Adm Scr ca co cm
+    hlpEq hhbEq hlpRoom hhbR hAdmLen hpin hpinE hwidth
+    (one_lt_mcB (three_le_length hx.1) hq)
+    hnB hnnB hn2B hbigB hdB hRB hwB
+    (hlpB x hx) (hhbB x hx) (hhistB x hx) (hpalB x hx)
+    hscrA hscrLvl hcovA hcovP
+
+open Classical in
+/-- The channel seam is needed only at an admissible arena on a run level.
+This permits the canonical transport to use the reached arena's monotone
+root renaming while keeping the exact `ChildLoadAll` conclusion. -/
+theorem childLoadAll_of_parts_adm (C : GraphClass) (hC : NowhereDense C)
+    (φ : FO 0) (ord : CoverSpec.OrderingRoutine) {n : ℕ}
+    (G : SimpleGraph (Fin n)) (c w q : ℕ) (ℓp : ℕ → ℕ)
+    (htabF : (j : ℕ) →
+      (A : Arena ((Headline.headlineSetup C hC φ).pal j) n) →
+      Fin A.N → Fin (ℓp j) → List (Fin A.N))
+    (hbf : ℕ → ℕ)
+    (Adm : (j : ℕ) → Arena ((Headline.headlineSetup C hC φ).pal j) n → Prop)
+    (Scr : ℕ → Env → Prop) (ca co cm : ℕ → String) (prepC : ℕ → Com)
+    (chanF : (j : ℕ) →
+      (A : Arena ((Headline.headlineSetup C hC φ).pal j) n) →
+      (u : Fin A.N) →
+      Fin (childN (Headline.headlineSetup C hC φ) A
+        ((ord A.N A.G).order) u) →
+      Fin (ℓp (j + 1)) →
+      List (Fin (childN (Headline.headlineSetup C hC φ) A
+        ((ord A.N A.G).order) u)))
+    (KP : (k j : ℕ) →
+      Arena ((Headline.headlineSetup C hC φ).pal j) n → ℕ → ℕ)
+    (hhtab : ∀ (j : ℕ), j + 1 ≤ (Headline.headlineSetup C hC φ).depth →
+      ∀ (A : Arena ((Headline.headlineSetup C hC φ).pal j) n), Adm j A →
+      ∀ u : Fin A.N,
+      htabF (j + 1) (childArena (Headline.headlineSetup C hC φ) A
+        ((ord A.N A.G).order) u) = chanF j A u)
+    (hparts : ChildLoadPartsAll C hC φ ord G c w q ℓp htabF hbf Adm Scr
+      ca co cm prepC chanF KP) :
+    ChildLoadAll C hC φ ord G c w q ℓp htabF hbf Adm Scr ca co cm prepC
+      KP := by
+  intro x hx k j A hdiag hAdm hbot u
+  refine ((hparts x hx) k j A hdiag hAdm hbot u).post ?_
+  rintro σ σ' _ ⟨⟨Dp, Dc, hPT, hAW⟩, hframe⟩
+  refine ⟨?_, hframe⟩
+  rw [hhtab j (by omega) A hAdm u,
+    ← machChild_eq_ofArena (Headline.headlineSetup C hC φ) A
+      ((ord A.N A.G).order) u (chanF j A u) hPT]
+  exact hAW
+
+open Classical in
+/-- Compile-time consumer fit for the actual program and honest budget. -/
+example (C : GraphClass) (hC : NowhereDense C) (φ : FO 0)
+    (ord : CoverSpec.OrderingRoutine) {n : ℕ} (G : SimpleGraph (Fin n))
+    (c w q : ℕ) (ℓp : ℕ → ℕ)
+    (htabF : (j : ℕ) →
+      (A : Arena ((Headline.headlineSetup C hC φ).pal j) n) →
+      Fin A.N → Fin (ℓp j) → List (Fin A.N))
+    (hbf : ℕ → ℕ)
+    (Adm : (j : ℕ) → Arena ((Headline.headlineSetup C hC φ).pal j) n → Prop)
+    (Scr : ℕ → Env → Prop) (ca co cm : ℕ → String)
+    -- the constant-`ℓp` discipline (F7 owns both parameters)
+    (hlpEq : ∀ j, j + 1 ≤ (Headline.headlineSetup C hC φ).depth → ℓp (j + 1) = ℓp j)
+    (hhbEq : ∀ j, j + 1 ≤ (Headline.headlineSetup C hC φ).depth → hbf (j + 1) = hbf j)
+    (hlpRoom : ∀ j, j + 1 ≤ (Headline.headlineSetup C hC φ).depth → j < ℓp j)
+    (hhbR : ∀ j, j + 1 ≤ (Headline.headlineSetup C hC φ).depth → 2 * (Headline.headlineSetup C hC φ).R + 1 ≤ hbf j)
+    -- the admissible history shape and the channel-pinning seam
+    (hAdmLen : ∀ j (A : Arena ((Headline.headlineSetup C hC φ).pal j) n), Adm j A → A.hist.length = j)
+    (hpin : ∀ j (A : Arena ((Headline.headlineSetup C hC φ).pal j) n), Adm j A →
+      ∀ (v : Fin A.N) (e : Fin (ℓp j)) (he : (e : ℕ) < A.hist.length)
+        (z : Fin A.N),
+        z ∈ htabF j A v e ↔ (A.up z) ∈ Lax3Proofs.SplitterWin.pathSet
+          (A.hist.reverse[(e : ℕ)]'(by simpa using he)).2 (2 * (Headline.headlineSetup C hC φ).R)
+          (A.hist.reverse[(e : ℕ)]'(by simpa using he)).1 (A.up v))
+    (hpinE : ∀ j (A : Arena ((Headline.headlineSetup C hC φ).pal j) n), Adm j A →
+      ∀ (v : Fin A.N) (e : Fin (ℓp j)), A.hist.length ≤ (e : ℕ) →
+        htabF j A v e = [])
+    -- the batch fits the width
+    (hwidth : ∀ j, j + 1 ≤ (Headline.headlineSetup C hC φ).depth → 1 + j * (2 * (Headline.headlineSetup C hC φ).R + 1) ≤ (Headline.headlineSetup C hC φ).width)
+    (hq : 1 ≤ q)
+    (hB : ∀ x ∈ mcD n G c w,
+      n < mcB q x ∧ n * n < mcB q x ∧ n + 2 < mcB q x ∧
+      n * n + 2 * n + 1 < mcB q x ∧
+      (Headline.headlineSetup C hC φ).depth < mcB q x ∧
+      2 * (Headline.headlineSetup C hC φ).R + 3 < mcB q x ∧
+      (Headline.headlineSetup C hC φ).width < mcB q x)
+    (hlpB : ∀ x ∈ mcD n G c w, ∀ j ≤ (Headline.headlineSetup C hC φ).depth,
+      ℓp j < mcB q x)
+    (hhbB : ∀ x ∈ mcD n G c w, ∀ j ≤ (Headline.headlineSetup C hC φ).depth,
+      hbf j + 1 < mcB q x)
+    (hhistB : ∀ x ∈ mcD n G c w, ∀ j ≤ (Headline.headlineSetup C hC φ).depth,
+      n * ℓp j * (hbf j + 1) < mcB q x)
+    (hpalB : ∀ x ∈ mcD n G c w, ∀ j ≤ (Headline.headlineSetup C hC φ).depth,
+      n * (Headline.headlineSetup C hC φ).pal j < mcB q x)
+    -- the scratch descriptor's length clauses
+    (hscrA : ∀ j' σ, Scr j' σ →
+      n ≤ (σ.arrs "cp.l").length ∧ n ≤ (σ.arrs "cp.r").length ∧
+      n ≤ (σ.arrs "cp.b").length ∧ n ≤ (σ.arrs "cp.d").length ∧
+      n ≤ (σ.arrs "cp.p").length ∧ n ≤ (σ.arrs "cp.x").length ∧
+      n + 2 ≤ (σ.arrs "cp.v").length ∧
+      (σ.arrs "cp.w").length = (Headline.headlineSetup C hC φ).width ∧
+      n + 1 ≤ (σ.arrs "cp.o").length ∧
+      n * n ≤ (σ.arrs "cp.t").length ∧
+      n * (Headline.headlineSetup C hC φ).pal j' ≤ (σ.arrs "cp.c").length ∧
+      (∀ i, i < (Headline.headlineSetup C hC φ).width → n ≤ (σ.arrs (lv "cq.d" i)).length) ∧
+      (∀ c, c < (Headline.headlineSetup C hC φ).pal j' →
+        n * n + 2 * n ≤ (σ.arrs (lv "cq.v" c)).length) ∧
+      (∀ c, c < (Headline.headlineSetup C hC φ).pal j' + 1 → n + 1 ≤ (σ.arrs (lv "cq.u" c)).length))
+    (hscrLvl : ∀ j', j' + 1 ≤ (Headline.headlineSetup C hC φ).depth → ∀ σ, Scr j' σ →
+      n + 1 ≤ (σ.arrs (arenaNames (j' + 1)).off).length ∧
+      n * n ≤ (σ.arrs (arenaNames (j' + 1)).tgt).length ∧
+      n * (Headline.headlineSetup C hC φ).pal (j' + 1) ≤ (σ.arrs (arenaNames (j' + 1)).col).length ∧
+      n ≤ (σ.arrs (arenaNames (j' + 1)).up).length ∧
+      n * ℓp j' * (hbf j' + 1)
+        ≤ (σ.arrs (arenaNames (j' + 1)).hist).length)
+    -- cover-name freshness
+    (hcovA : ∀ jc j', ca jc ∉ levelArrays j' ∧ co jc ∉ levelArrays j' ∧
+      cm jc ∉ levelArrays j')
+    (hcovP : ∀ jc, (ca jc ∉ prepArrays ∧ co jc ∉ prepArrays ∧
+        cm jc ∉ prepArrays) ∧
+      ∀ i, (ca jc ≠ lv "cq.d" i ∧ ca jc ≠ lv "cq.v" i ∧
+          ca jc ≠ lv "cq.u" i) ∧
+        (co jc ≠ lv "cq.d" i ∧ co jc ≠ lv "cq.v" i ∧
+          co jc ≠ lv "cq.u" i) ∧
+        (cm jc ≠ lv "cq.d" i ∧ cm jc ≠ lv "cq.v" i ∧
+          cm jc ≠ lv "cq.u" i))
+
+    (hhtab : ∀ (j : ℕ), j + 1 ≤ (Headline.headlineSetup C hC φ).depth →
+      ∀ (A : Arena ((Headline.headlineSetup C hC φ).pal j) n), Adm j A →
+      ∀ u : Fin A.N,
+      htabF (j + 1)
+        (childArena (Headline.headlineSetup C hC φ) A ((ord A.N A.G).order) u)
+        = prepChan (Headline.headlineSetup C hC φ) ord ℓp htabF j A u) :
+    ChildLoadAll C hC φ ord G c w q ℓp htabF hbf Adm Scr ca co cm
+      (prepCom (Headline.headlineSetup C hC φ) ℓp hbf co cm)
+      (fun _ j A u => prepK (Headline.headlineSetup C hC φ) ord ℓp hbf j A u) :=
+  childLoadAll_of_parts_adm C hC φ ord G c w q ℓp htabF hbf Adm Scr ca co cm
+    (prepCom (Headline.headlineSetup C hC φ) ℓp hbf co cm)
+    (prepChan (Headline.headlineSetup C hC φ) ord ℓp htabF)
+    (fun _ j A u => prepK (Headline.headlineSetup C hC φ) ord ℓp hbf j A u) hhtab
+    (childLoadPartsAll_of C hC φ ord G c w q ℓp htabF hbf Adm Scr ca co cm
+      hlpEq hhbEq hlpRoom hhbR hAdmLen hpin hpinE hwidth
+      hq hB hlpB hhbB hhistB hpalB hscrA hscrLvl hcovA hcovP)
+
 
 end Lax3Proofs.Prog
