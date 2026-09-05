@@ -132,12 +132,12 @@ def plArrNames : List String := [plDd, plRw, plRe, plDz, plIo, plCu, plIv, plFl]
 seam demands: the eight scratch allocations at the carrier bound `n`,
 and the membership allocation `cm` at the mass bound `n²` (the one
 allocation `CovPeelIn`'s precondition does not carry). -/
-def peelScr (n : ℕ) (cm : ℕ → String) (_j : ℕ) (σ : Env) : Prop :=
+def peelScr (n : ℕ) (cm : ℕ → String) (j : ℕ) (σ : Env) : Prop :=
   n ≤ (σ.arrs plDd).length ∧ n * n ≤ (σ.arrs plRw).length ∧
   n + 1 ≤ (σ.arrs plRe).length ∧ n ≤ (σ.arrs plDz).length ∧
   n + 1 ≤ (σ.arrs plIo).length ∧ n ≤ (σ.arrs plCu).length ∧
   n * n ≤ (σ.arrs plIv).length ∧ n ≤ (σ.arrs plFl).length ∧
-  n * n ≤ (σ.arrs (cm 0)).length
+  n * n ≤ (σ.arrs (cm j)).length
 
 /-! ## §2 The program -/
 
@@ -5064,5 +5064,743 @@ theorem peelInitB_spec {B N R : ℕ} {G : SimpleGraph (Fin N)}
     subst i
     simpa [mval_zero] using hre'
   · intro i hi; omega
+
+end Lax3Proofs.Prog
+
+namespace Lax3Proofs.Prog
+set_option linter.unusedSimpArgs false
+open Lax67Proofs.Imp Lax67Proofs.Reasoning
+open Lax12.ColoringNumbers
+
+/-- Occurrences of one member in a prefix of the emitted stream. -/
+def peelOcc (f : ℕ → ℕ) (z k : ℕ) : ℕ :=
+  ∑ p ∈ Finset.range k, if f p = z then 1 else 0
+
+@[simp] theorem peelOcc_zero (f : ℕ → ℕ) (z : ℕ) : peelOcc f z 0 = 0 := rfl
+
+theorem peelOcc_succ (f : ℕ → ℕ) (z k : ℕ) :
+    peelOcc f z (k + 1) = peelOcc f z k + if f k = z then 1 else 0 :=
+  Finset.sum_range_succ _ k
+
+theorem peelOcc_mono (f : ℕ → ℕ) (z : ℕ) {i j : ℕ} (h : i ≤ j) :
+    peelOcc f z i ≤ peelOcc f z j := by
+  exact Finset.sum_le_sum_of_subset (Finset.range_mono h)
+
+theorem peelOcc_le (f : ℕ → ℕ) (z k : ℕ) : peelOcc f z k ≤ k := by
+  calc peelOcc f z k ≤ ∑ _p ∈ Finset.range k, 1 :=
+      Finset.sum_le_sum (fun _ _ => by split_ifs <;> omega)
+    _ = k := by simp
+
+theorem peelOcc_strict (f : ℕ → ℕ) {p q : ℕ} (hpq : p < q) :
+    peelOcc f (f p) p < peelOcc f (f p) q := by
+  have h := peelOcc_mono f (f p) (Nat.succ_le_of_lt hpq)
+  rw [peelOcc_succ, if_pos rfl] at h
+  omega
+
+/-- Counting all member buckets counts each stream entry exactly once. -/
+theorem peelOcc_sum {N k : ℕ} {f : ℕ → ℕ} (hf : ∀ p, p < k → f p < N) :
+    ∑ z ∈ Finset.range N, peelOcc f z k = k := by
+  unfold peelOcc
+  rw [Finset.sum_comm]
+  have hh : ∀ p ∈ Finset.range k,
+      (∑ z ∈ Finset.range N, if f p = z then 1 else 0) = 1 := by
+    intro p hp
+    simp [Finset.sum_ite_eq, hf p (Finset.mem_range.mp hp)]
+  rw [Finset.sum_congr rfl hh]
+  simp
+
+/-- Prefix offsets of the member-major buckets. -/
+def peelIOff (f : ℕ → ℕ) (M z : ℕ) : ℕ :=
+  ∑ w ∈ Finset.range z, peelOcc f w M
+
+@[simp] theorem peelIOff_zero (f : ℕ → ℕ) (M : ℕ) : peelIOff f M 0 = 0 := rfl
+
+theorem peelIOff_succ (f : ℕ → ℕ) (M z : ℕ) :
+    peelIOff f M (z + 1) = peelIOff f M z + peelOcc f z M :=
+  Finset.sum_range_succ _ z
+
+theorem peelIOff_mono (f : ℕ → ℕ) (M : ℕ) {i j : ℕ} (h : i ≤ j) :
+    peelIOff f M i ≤ peelIOff f M j :=
+  Finset.sum_le_sum_of_subset (Finset.range_mono h)
+
+theorem peelIOff_last {N M : ℕ} {f : ℕ → ℕ} (hf : ∀ p, p < M → f p < N) :
+    peelIOff f M N = M := peelOcc_sum hf
+
+theorem peelIOff_le {N M : ℕ} {f : ℕ → ℕ} (hf : ∀ p, p < M → f p < N)
+    {z : ℕ} (hz : z ≤ N) : peelIOff f M z ≤ M := by
+  exact (peelIOff_mono f M hz).trans_eq (peelIOff_last hf)
+
+/-- Regroup pass 1 initializes only the inverse count prefix. -/
+theorem peelP1B_spec {B N : ℕ} (hNB : N < B) :
+    Spec B (fun σ => σ.vars "pl.n" = N ∧ N ≤ (σ.arrs plDz).length)
+      peelP1B (fun _ σ' => ∀ z, z < N → (σ'.arrs plDz).getD z 0 = 0)
+      (11 * N + 6) := by
+  let I : Env → Prop := fun σ => σ.vars "pl.n" = N ∧ σ.vars "pl.i" ≤ N ∧
+    N ≤ (σ.arrs plDz).length ∧ ∀ z, z < σ.vars "pl.i" → (σ.arrs plDz).getD z 0 = 0
+  have hbody : Spec B (fun σ => I σ ∧ σ.vars "pl.i" < N)
+      (.seq (.store plDz (.var "pl.i") (.lit 0))
+        (.assign "pl.i" (.add (.var "pl.i") (.lit 1))))
+      (fun σ σ' => I σ' ∧ σ'.vars "pl.i" = σ.vars "pl.i" + 1) 7 := by
+    rintro σ ⟨⟨hn, hi, hL, hv⟩, hiN⟩
+    run_vcg
+    dsimp [I]
+    simp only [vars_setVar, vars_setArr, arrs_setVar, arrs_setArr]
+    simp only [show ("pl.n" : String) ≠ "pl.i" by decide, if_false, if_true,
+      List.length_set]
+    refine ⟨⟨hn, by omega, hL, ?_⟩, by trivial⟩
+    intro z hz
+    rw [getD_set _ _ _ (by omega)]
+    split_ifs with h
+    · rfl
+    · exact hv z (by omega)
+  refine (Spec.forRangeZero "pl.i" "pl.n" I N 7 hNB
+    (fun _ h => h.2.1) (fun _ h => h.1) hbody).conseq ?_ ?_ (by omega)
+  · rintro σ ⟨hn, hL⟩
+    simp [I, hn, hL]
+  · rintro σ σ' _ ⟨hI, hi⟩ z hz
+    exact hI.2.2.2 z (by omega)
+
+/-- Regroup pass 2 counts the complete emitted stream once. -/
+theorem peelP2B_spec {B N M : ℕ} {f : ℕ → ℕ}
+    (hNB : N < B) (hMB : M + 1 < B) (hf : ∀ p, p < M → f p < N) :
+    Spec B (fun σ => σ.vars "pl.m" = M ∧ N ≤ (σ.arrs plDz).length ∧
+        M ≤ (σ.arrs plRw).length ∧
+        (∀ p, p < M → (σ.arrs plRw).getD p 0 = f p) ∧
+        (∀ z, z < N → (σ.arrs plDz).getD z 0 = 0))
+      peelP2B (fun _ σ' => ∀ z, z < N → (σ'.arrs plDz).getD z 0 = peelOcc f z M)
+      (16 * M + 6) := by
+  let I : Env → Prop := fun σ => σ.vars "pl.m" = M ∧ σ.vars "pl.k" ≤ M ∧
+    N ≤ (σ.arrs plDz).length ∧ M ≤ (σ.arrs plRw).length ∧
+    (∀ p, p < M → (σ.arrs plRw).getD p 0 = f p) ∧
+    (∀ z, z < N → (σ.arrs plDz).getD z 0 = peelOcc f z (σ.vars "pl.k"))
+  have hbody : Spec B (fun σ => I σ ∧ σ.vars "pl.k" < M)
+      (.seq (.store plDz (.get plRw (.var "pl.k"))
+          (.add (.get plDz (.get plRw (.var "pl.k"))) (.lit 1)))
+        (.assign "pl.k" (.add (.var "pl.k") (.lit 1))))
+      (fun σ σ' => I σ' ∧ σ'.vars "pl.k" = σ.vars "pl.k" + 1) 12 := by
+    rintro σ ⟨⟨hm, hk, hzL, hrL, hrv, hzv⟩, hkM⟩
+    have hfk := hf _ hkM
+    have hrk := hrv _ hkM
+    have hzk : (σ.arrs plDz).getD ((σ.arrs plRw).getD (σ.vars "pl.k") 0) 0
+        = peelOcc f (f (σ.vars "pl.k")) (σ.vars "pl.k") := by
+      rw [hrk, hzv _ hfk]
+    have hzkB := peelOcc_le f (f (σ.vars "pl.k")) (σ.vars "pl.k")
+    run_vcg
+    dsimp [I]
+    simp only [vars_setVar, vars_setArr, arrs_setVar, arrs_setArr]
+    simp only [show ("pl.m" : String) ≠ "pl.k" by decide, if_false, if_true,
+      show plRw ≠ plDz by decide, List.length_set]
+    refine ⟨⟨hm, by omega, hzL, hrL, hrv, ?_⟩, by trivial⟩
+    intro z hz
+    rw [getD_set _ _ _ (by omega), peelOcc_succ]
+    rw [hrk, hzv _ hfk]
+    by_cases he : z = f (σ.vars "pl.k")
+    · subst z
+      simp
+    · rw [if_neg he, if_neg (Ne.symm he)]
+      exact hzv z hz
+  refine (Spec.forRangeZero "pl.k" "pl.m" I M 12 (by omega)
+    (fun _ h => h.2.1) (fun _ h => h.1) hbody).conseq ?_ ?_ (by omega)
+  · rintro σ ⟨hm, hzL, hrL, hrv, hzv⟩
+    simpa [I, hm] using And.intro hzL (And.intro hrL (And.intro hrv hzv))
+  · rintro σ σ' _ ⟨hI, hk⟩ z hz
+    simpa [hk] using hI.2.2.2.2.2 z hz
+
+/-- Copy a carrier-sized prefix, used for the two cursor initializations. -/
+theorem peel_copy_spec {B N : ℕ} {src dst : String} {v : ℕ → ℕ}
+    (hNB : N < B) (hne : src ≠ dst) (hvB : ∀ z, z < N → v z < B) :
+    Spec B (fun σ => σ.vars "pl.n" = N ∧ N ≤ (σ.arrs src).length ∧
+        N ≤ (σ.arrs dst).length ∧ ∀ z, z < N → (σ.arrs src).getD z 0 = v z)
+      (.seq (.assign "pl.i" (.lit 0))
+        (.while (.lt (.var "pl.i") (.var "pl.n"))
+          (.seq (.store dst (.var "pl.i") (.get src (.var "pl.i")))
+            (.assign "pl.i" (.add (.var "pl.i") (.lit 1))))))
+      (fun _ σ' => ∀ z, z < N → (σ'.arrs dst).getD z 0 = v z) (12 * N + 6) := by
+  let I : Env → Prop := fun σ => σ.vars "pl.n" = N ∧ σ.vars "pl.i" ≤ N ∧
+    N ≤ (σ.arrs src).length ∧ N ≤ (σ.arrs dst).length ∧
+    (∀ z, z < N → (σ.arrs src).getD z 0 = v z) ∧
+    (∀ z, z < σ.vars "pl.i" → (σ.arrs dst).getD z 0 = v z)
+  have hbody : Spec B (fun σ => I σ ∧ σ.vars "pl.i" < N)
+      (.seq (.store dst (.var "pl.i") (.get src (.var "pl.i")))
+        (.assign "pl.i" (.add (.var "pl.i") (.lit 1))))
+      (fun σ σ' => I σ' ∧ σ'.vars "pl.i" = σ.vars "pl.i" + 1) 8 := by
+    rintro σ ⟨⟨hn, hi, hsL, hdL, hsv, hdv⟩, hiN⟩
+    have hsi := hsv _ hiN
+    have hsiB := hvB _ hiN
+    run_vcg
+    dsimp [I]
+    simp only [vars_setVar, vars_setArr, arrs_setVar, arrs_setArr]
+    simp only [show ("pl.n" : String) ≠ "pl.i" by decide, if_false, if_true,
+      hne, List.length_set]
+    refine ⟨⟨hn, by omega, hsL, hdL, hsv, ?_⟩, by trivial⟩
+    intro z hz
+    rw [getD_set _ _ _ (by omega)]
+    by_cases he : z = σ.vars "pl.i"
+    · subst z; rw [if_pos rfl]; exact hsi
+    · rw [if_neg he]; exact hdv z (by omega)
+  refine (Spec.forRangeZero "pl.i" "pl.n" I N 8 hNB
+    (fun _ h => h.2.1) (fun _ h => h.1) hbody).conseq ?_ ?_ (by omega)
+  · rintro σ ⟨hn, hsL, hdL, hsv⟩
+    simpa [I, hn] using And.intro hsL (And.intro hdL hsv)
+  · rintro σ σ' _ ⟨hI, hi⟩ z hz
+    exact hI.2.2.2.2.2 z (by omega)
+
+/-- Regroup pass 3 computes the inverse bucket offsets. -/
+theorem peelP3B_spec {B N M : ℕ} {f : ℕ → ℕ}
+    (hNB : N + 1 < B) (hMB : M + 1 < B) (hf : ∀ p, p < M → f p < N) :
+    Spec B (fun σ => σ.vars "pl.n" = N ∧ N ≤ (σ.arrs plDz).length ∧
+        N + 1 ≤ (σ.arrs plIo).length ∧
+        (∀ z, z < N → (σ.arrs plDz).getD z 0 = peelOcc f z M))
+      peelP3B
+      (fun _ σ' => ∀ z, z ≤ N → (σ'.arrs plIo).getD z 0 = peelIOff f M z)
+      (17 * N + 9) := by
+  let I : Env → Prop := fun σ => σ.vars "pl.n" = N ∧ σ.vars "pl.i" ≤ N ∧
+    N ≤ (σ.arrs plDz).length ∧ N + 1 ≤ (σ.arrs plIo).length ∧
+    (∀ z, z < N → (σ.arrs plDz).getD z 0 = peelOcc f z M) ∧
+    (∀ z, z ≤ σ.vars "pl.i" → (σ.arrs plIo).getD z 0 = peelIOff f M z)
+  have hbody : Spec B (fun σ => I σ ∧ σ.vars "pl.i" < N)
+      (.seq (.store plIo (.add (.var "pl.i") (.lit 1))
+          (.add (.get plIo (.var "pl.i")) (.get plDz (.var "pl.i"))))
+        (.assign "pl.i" (.add (.var "pl.i") (.lit 1))))
+      (fun σ σ' => I σ' ∧ σ'.vars "pl.i" = σ.vars "pl.i" + 1) 13 := by
+    rintro σ ⟨⟨hn, hi, hzL, hoL, hzv, hov⟩, hiN⟩
+    have hzi := hzv _ hiN
+    have hoi := hov _ le_rfl
+    have hsum : (σ.arrs plIo).getD (σ.vars "pl.i") 0 +
+        (σ.arrs plDz).getD (σ.vars "pl.i") 0 ≤ M := by
+      rw [hoi, hzi, ← peelIOff_succ]
+      exact peelIOff_le hf (by omega)
+    run_vcg
+    dsimp [I]
+    simp only [vars_setVar, vars_setArr, arrs_setVar, arrs_setArr]
+    simp only [show ("pl.n" : String) ≠ "pl.i" by decide, if_false, if_true,
+      show plDz ≠ plIo by decide, List.length_set]
+    refine ⟨⟨hn, by omega, hzL, hoL, hzv, ?_⟩, by trivial⟩
+    intro z hz
+    rw [getD_set _ _ _ (by omega)]
+    by_cases he : z = σ.vars "pl.i" + 1
+    · rw [if_pos he, he, peelIOff_succ, hoi, hzi]
+    · rw [if_neg he]; exact hov z (by omega)
+  have hloop := Spec.forRangeZero "pl.i" "pl.n" I N 13 (by omega)
+    (fun _ h => h.2.1) (fun _ h => h.1) hbody
+  rintro σ ⟨hn, hzL, hoL, hzv⟩
+  have h0 : Run B (.store plIo (.lit 0) (.lit 0)) σ (σ.setArr plIo 0 0) 3 :=
+    Run.store (evalB_lit (by omega)) (evalB_lit (by omega)) (by omega)
+  obtain ⟨σ', hr, hI, hi⟩ := hloop.run (σ := σ.setArr plIo 0 0) (by
+    dsimp [I]
+    simp only [show ("pl.n" : String) ≠ "pl.i" by decide, if_false, if_true,
+      show plDz ≠ plIo by decide, List.length_set, Nat.zero_le]
+    refine ⟨hn, by trivial, hzL, hoL, hzv, ?_⟩
+    intro z hz
+    have he : z = 0 := by omega
+    subst z
+    rw [getD_set _ _ _ (by omega), if_pos rfl, peelIOff_zero])
+  refine ⟨σ', (h0.seq hr).mono (by omega), ?_⟩
+  intro z hz
+  exact hI.2.2.2.2.2 z (by omega)
+
+/-- The destination of one stream pair in the member-major regroup. -/
+def peelDest (f : ℕ → ℕ) (M p : ℕ) : ℕ := peelIOff f M (f p) + peelOcc f (f p) p
+
+theorem peelDest_mem {N M : ℕ} {f : ℕ → ℕ}
+    (hf : ∀ p, p < M → f p < N) {p : ℕ} (hp : p < M) :
+    peelIOff f M (f p) ≤ peelDest f M p ∧
+      peelDest f M p < peelIOff f M (f p + 1) := by
+  have hs := peelOcc_strict f hp
+  rw [peelIOff_succ]
+  dsimp [peelDest]
+  omega
+
+theorem peelDest_lt {N M : ℕ} {f : ℕ → ℕ}
+    (hf : ∀ p, p < M → f p < N) {p : ℕ} (hp : p < M) : peelDest f M p < M :=
+  lt_of_lt_of_le (peelDest_mem hf hp).2 (peelIOff_le hf (by have := hf p hp; omega))
+
+theorem peel_bucket_unique {f : ℕ → ℕ} {M z w q : ℕ}
+    (hz : peelIOff f M z ≤ q ∧ q < peelIOff f M (z + 1))
+    (hw : peelIOff f M w ≤ q ∧ q < peelIOff f M (w + 1)) : z = w := by
+  rcases lt_trichotomy z w with h | h | h
+  · have hh := peelIOff_mono f M (Nat.succ_le_of_lt h)
+    simp only [Nat.succ_eq_add_one] at hh
+    omega
+  · exact h
+  · have hh := peelIOff_mono f M (Nat.succ_le_of_lt h)
+    simp only [Nat.succ_eq_add_one] at hh
+    omega
+
+theorem peelDest_inj {N M : ℕ} {f : ℕ → ℕ}
+    (hf : ∀ p, p < M → f p < N) {p q : ℕ} (hp : p < M) (hq : q < M)
+    (h : peelDest f M p = peelDest f M q) : p = q := by
+  have he : f p = f q := peel_bucket_unique (peelDest_mem hf hp) (h ▸ peelDest_mem hf hq)
+  have hc : peelOcc f (f p) p = peelOcc f (f q) q := by
+    simp only [peelDest, he] at h
+    rw [he]
+    exact Nat.add_left_cancel h
+  rcases lt_trichotomy p q with hpq | hpq | hpq
+  · have := peelOcc_strict f hpq; rw [← he] at hc; omega
+  · exact hpq
+  · have := peelOcc_strict f hpq; rw [he] at hc; omega
+
+theorem peelDest_surj {N M : ℕ} {f : ℕ → ℕ}
+    (hf : ∀ p, p < M → f p < N) {q : ℕ} (hq : q < M) :
+    ∃ p, p < M ∧ peelDest f M p = q := by
+  let e : Fin M → Fin M := fun p => ⟨peelDest f M p, peelDest_lt hf p.isLt⟩
+  have hi : Function.Injective e := by
+    intro p p' he
+    exact Fin.ext (peelDest_inj hf p.isLt p'.isLt (congrArg Fin.val he))
+  obtain ⟨p, hp⟩ := (Finite.surjective_of_injective hi) ⟨q, hq⟩
+  exact ⟨p, p.isLt, congrArg Fin.val hp⟩
+
+/-- The inverse scatter preserves the source relation, with one copy per pair. -/
+theorem peel_transpose_segments {N M : ℕ} {f own iv : ℕ → ℕ}
+    {X : Fin N → Set (Fin N)} (hf : ∀ p, p < M → f p < N)
+    (ho : ∀ p, p < M → own p < N)
+    (hs : ∀ p, (hp : p < M) → (⟨f p, hf p hp⟩ : Fin N) ∈ X ⟨own p, ho p hp⟩)
+    (hc : ∀ u z : Fin N, z ∈ X u → ∃ p, p < M ∧ own p = u ∧ f p = z)
+    (hi : ∀ p q, p < M → q < M → own p = own q → f p = f q → p = q)
+    (hv : ∀ p, p < M → iv (peelDest f M p) = own p) (z : Fin N) :
+    SegAt iv (peelIOff f M z) (peelIOff f M (z + 1)) {u | z ∈ X u} := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro q hq0 hq1
+    have hqM : q < M := lt_of_lt_of_le hq1 (peelIOff_le hf (by omega))
+    obtain ⟨p, hp, hpq⟩ := peelDest_surj hf hqM
+    have hfp : f p = z := peel_bucket_unique (peelDest_mem hf hp) (by simpa [hpq] using And.intro hq0 hq1)
+    have hiv : iv q = own p := by rw [← hpq]; exact hv p hp
+    refine ⟨by rw [hiv]; exact ho p hp, ?_⟩
+    have hzFin : (⟨f p, hf p hp⟩ : Fin N) = z := Fin.ext hfp
+    have hoFin : (⟨iv q, by rw [hiv]; exact ho p hp⟩ : Fin N) = ⟨own p, ho p hp⟩ := Fin.ext hiv
+    change z ∈ X _
+    rw [hoFin, ← hzFin]
+    exact hs p hp
+  · intro u hu
+    obtain ⟨p, hp, hop, hfp⟩ := hc u z hu
+    have hmem := peelDest_mem hf hp
+    rw [hfp] at hmem
+    exact ⟨peelDest f M p, hmem.1, hmem.2, (hv p hp).trans hop⟩
+  · intro q q' hq0 hq1 hq0' hq1' heq
+    have hqM : q < M := lt_of_lt_of_le hq1 (peelIOff_le hf (by omega))
+    have hqM' : q' < M := lt_of_lt_of_le hq1' (peelIOff_le hf (by omega))
+    obtain ⟨p, hp, hpq⟩ := peelDest_surj hf hqM
+    obtain ⟨p', hp', hpq'⟩ := peelDest_surj hf hqM'
+    have hfp : f p = z := peel_bucket_unique (peelDest_mem hf hp) (by simpa [hpq] using And.intro hq0 hq1)
+    have hfp' : f p' = z := peel_bucket_unique (peelDest_mem hf hp') (by simpa [hpq'] using And.intro hq0' hq1')
+    have hop : own p = own p' := by rw [← hv p hp, ← hv p' hp', hpq, hpq']; exact heq
+    have hpp := hi p p' hp hp' hop (hfp.trans hfp'.symm)
+    rw [← hpq, ← hpq', hpp]
+
+/-- The immutable input of the inverse scatter, plus its allocations. -/
+def PeelScBase (od : String) (N M : ℕ) (e row f : ℕ → ℕ) (σ : Env) : Prop :=
+  σ.vars "pl.n" = N ∧ N ≤ (σ.arrs od).length ∧
+  N + 1 ≤ (σ.arrs plRe).length ∧ M ≤ (σ.arrs plRw).length ∧
+  N ≤ (σ.arrs plCu).length ∧ M ≤ (σ.arrs plIv).length ∧
+  (∀ i, i < N → (σ.arrs od).getD i 0 = row i) ∧
+  (∀ i, i ≤ N → (σ.arrs plRe).getD i 0 = e i) ∧
+  (∀ p, p < M → (σ.arrs plRw).getD p 0 = f p)
+
+theorem peelScBase_setVar {od x : String} {N M v : ℕ} {e row f : ℕ → ℕ} {σ : Env}
+    (h : PeelScBase od N M e row f σ) (hx : ("pl.n" : String) ≠ x) :
+    PeelScBase od N M e row f (σ.setVar x v) := by
+  simpa [PeelScBase, hx] using h
+
+theorem peelScBase_setArr {od a : String} {N M p v : ℕ} {e row f : ℕ → ℕ} {σ : Env}
+    (h : PeelScBase od N M e row f σ) (h1 : od ≠ a) (h2 : plRe ≠ a) (h3 : plRw ≠ a) :
+    PeelScBase od N M e row f (σ.setArr a p v) := by
+  simp only [PeelScBase, length_arrs_setArr] at h ⊢
+  simpa only [vars_setArr, arrs_setArr, if_neg h1, if_neg h2, if_neg h3] using h
+
+/-- The already scattered prefix and the next empty slot of each bucket. -/
+def PeelScPart (N M : ℕ) (f own : ℕ → ℕ) (k : ℕ) (σ : Env) : Prop :=
+  (∀ z, z < N → (σ.arrs plCu).getD z 0 = peelIOff f M z + peelOcc f z k) ∧
+  (∀ p, p < k → (σ.arrs plIv).getD (peelDest f M p) 0 = own p)
+
+/-- Scatter one source segment, retaining the global prefix account. -/
+theorem peelP4_inner_spec {B N M i : ℕ} {od : String} {e row f own : ℕ → ℕ}
+    (hNB : N + 1 < B) (hMB : M + 1 < B)
+    (hdi : od ≠ plIv) (hdc : od ≠ plCu) (hi : i < N)
+    (he : e i ≤ e (i + 1)) (heM : e (i + 1) ≤ M)
+    (hrow : row i < N) (hf : ∀ p, p < M → f p < N)
+    (hown : ∀ p, e i ≤ p → p < e (i + 1) → own p = row i) :
+    Spec B (fun σ => PeelScBase od N M e row f σ ∧
+        σ.vars "pl.u" = row i ∧ σ.vars "pl.g" = e (i + 1) ∧
+        σ.vars "pl.k" = e i ∧ PeelScPart N M f own (e i) σ)
+      (.while (.lt (.var "pl.k") (.var "pl.g"))
+        (.seq (.assign "pl.z" (.get plRw (.var "pl.k")))
+          (.seq (.store plIv (.get plCu (.var "pl.z")) (.var "pl.u"))
+            (.seq (.store plCu (.var "pl.z")
+                (.add (.get plCu (.var "pl.z")) (.lit 1)))
+              (.assign "pl.k" (.add (.var "pl.k") (.lit 1)))))))
+      (fun _ σ' => PeelScBase od N M e row f σ' ∧ PeelScPart N M f own (e (i + 1)) σ')
+      (21 * (e (i + 1) - e i) + 4) := by
+  let I : Env → Prop := fun σ => PeelScBase od N M e row f σ ∧
+    σ.vars "pl.u" = row i ∧ σ.vars "pl.g" = e (i + 1) ∧
+    e i ≤ σ.vars "pl.k" ∧ σ.vars "pl.k" ≤ e (i + 1) ∧
+    PeelScPart N M f own (σ.vars "pl.k") σ
+  have hbody : Spec B (fun σ => I σ ∧ σ.vars "pl.k" < e (i + 1))
+      (.seq (.assign "pl.z" (.get plRw (.var "pl.k")))
+        (.seq (.store plIv (.get plCu (.var "pl.z")) (.var "pl.u"))
+          (.seq (.store plCu (.var "pl.z")
+              (.add (.get plCu (.var "pl.z")) (.lit 1)))
+            (.assign "pl.k" (.add (.var "pl.k") (.lit 1))))))
+      (fun σ σ' => I σ' ∧ σ'.vars "pl.k" = σ.vars "pl.k" + 1) 17 := by
+    rintro σ ⟨⟨hbase, hu, hg, hek, hke, hpart⟩, hklt⟩
+    rcases hbase with ⟨hn, hodL, hreL, hrwL, hcuL, hivL, hodv, hrev, hrwv⟩
+    rcases hpart with ⟨hcuv, hivv⟩
+    have hkM : σ.vars "pl.k" < M := by omega
+    have hfk := hf _ hkM
+    have hrk := hrwv _ hkM
+    have hcur : (σ.arrs plCu).getD ((σ.arrs plRw).getD (σ.vars "pl.k") 0) 0
+        = peelDest f M (σ.vars "pl.k") := by
+      rw [hrk, hcuv _ hfk]; rfl
+    have hdest := peelDest_lt hf hkM
+    have hownk := hown _ hek hklt
+    run_vcg
+    dsimp only [I]
+    simp only [vars_setVar, vars_setArr, arrs_setVar]
+    simp only [show ("pl.u" : String) ≠ "pl.k" by decide,
+      show ("pl.u" : String) ≠ "pl.z" by decide,
+      show ("pl.g" : String) ≠ "pl.k" by decide,
+      show ("pl.g" : String) ≠ "pl.z" by decide,
+      show ("pl.k" : String) ≠ "pl.z" by decide, if_false, if_true]
+    refine ⟨⟨?_, hu, hg, by omega, by omega, ?_, ?_⟩, by trivial⟩
+    · apply peelScBase_setVar _ (by decide)
+      apply peelScBase_setArr _ hdc (by decide) (by decide)
+      apply peelScBase_setArr _ hdi (by decide) (by decide)
+      exact peelScBase_setVar ⟨hn, hodL, hreL, hrwL, hcuL, hivL, hodv, hrev, hrwv⟩ (by decide)
+    · intro z hz
+      simp only [arrs_setArr, vars_setArr, arrs_setVar, vars_setVar]
+      simp only [show plCu ≠ plIv by decide, if_false, if_true,
+        show ("pl.k" : String) ≠ "pl.z" by decide]
+      rw [getD_set _ _ _ (by omega), peelOcc_succ]
+      rw [hrk, hcuv _ hfk]
+      by_cases hez : z = f (σ.vars "pl.k")
+      · subst z; simp only [if_pos rfl, if_true]; omega
+      · rw [if_neg hez, if_neg (Ne.symm hez), hcuv z hz]
+        omega
+    · intro p hp
+      simp only [arrs_setArr, vars_setArr, arrs_setVar, vars_setVar]
+      simp only [show plIv ≠ plCu by decide, if_false, if_true,
+        show ("pl.k" : String) ≠ "pl.z" by decide]
+      rw [getD_set _ _ _ (by omega), hcur]
+      by_cases hpk : p = σ.vars "pl.k"
+      · subst p; rw [if_pos rfl]; exact hu.trans hownk.symm
+      · have hplt : p < σ.vars "pl.k" := by omega
+        have hpM : p < M := by omega
+        rw [if_neg (fun h => hpk (peelDest_inj hf hpM hkM h))]
+        exact hivv p hplt
+    all_goals simp [show plCu ≠ plIv by decide] <;>
+      simp only [← List.getD_eq_getElem?_getD] <;> omega
+  refine (Spec.forRange "pl.k" "pl.g" I (e (i + 1)) 17
+    (21 * (e (i + 1) - e i) + 4)
+    (fun _ h => by have := h.2.2.2.2.1; omega)
+    (fun _ h => by rw [h.2.2.1]; omega)
+    (fun _ h => h.2.2.1) (fun _ h => h.2.2.2.2.1) hbody ?_ ?_).post ?_
+  · rintro σ ⟨hb, hu, hg, hk, hp⟩
+    exact ⟨hb, hu, hg, by omega, by omega, by simpa [hk] using hp⟩
+  · rintro σ ⟨_, _, _, hk, _⟩
+    rw [hk]
+  · rintro σ σ' _ ⟨hI, hk⟩
+    exact ⟨hI.1, by simpa [hk] using hI.2.2.2.2.2⟩
+
+private theorem peel_sum_widths {N : ℕ} {e : ℕ → ℕ} (h0 : e 0 = 0)
+    (he : ∀ i, i < N → e i ≤ e (i + 1)) :
+    ∑ i ∈ Finset.range N, (e (i + 1) - e i) = e N := by
+  induction N with
+  | zero => simpa using h0.symm
+  | succ N ih =>
+    rw [Finset.sum_range_succ, ih (fun i hi => he i (by omega))]
+    exact Nat.add_sub_of_le (he N (by omega))
+
+/-- Regroup pass 4 scatters every source pair exactly once. -/
+theorem peelP4B_spec {B N M : ℕ} {od : String} {e row f own : ℕ → ℕ}
+    (hNB : N + 1 < B) (hMB : M + 1 < B)
+    (hdi : od ≠ plIv) (hdc : od ≠ plCu)
+    (he0 : e 0 = 0) (heN : e N = M)
+    (hemono : ∀ i j, i ≤ j → j ≤ N → e i ≤ e j)
+    (hrow : ∀ i, i < N → row i < N) (hf : ∀ p, p < M → f p < N)
+    (hown : ∀ i, i < N → ∀ p, e i ≤ p → p < e (i + 1) → own p = row i) :
+    Spec B (fun σ => PeelScBase od N M e row f σ ∧ PeelScPart N M f own 0 σ)
+      (peelP4B od)
+      (fun _ σ' => PeelScPart N M f own M σ') (21 * M + 23 * N + 6) := by
+  let I : Env → Prop := fun σ => PeelScBase od N M e row f σ ∧
+    σ.vars "pl.i" ≤ N ∧ PeelScPart N M f own (e (σ.vars "pl.i")) σ
+  let K : ℕ → ℕ := fun i => 21 * (e (i + 1) - e i) + 19
+  have hstep : ∀ i, i < N → Spec B (fun σ => I σ ∧ σ.vars "pl.i" = i)
+      (.seq (.assign "pl.u" (.get od (.var "pl.i")))
+        (.seq (.assign "pl.k" (.get plRe (.var "pl.i")))
+          (.seq (.assign "pl.g" (.get plRe (.add (.var "pl.i") (.lit 1))))
+            (.seq
+              (.while (.lt (.var "pl.k") (.var "pl.g"))
+                (.seq (.assign "pl.z" (.get plRw (.var "pl.k")))
+                  (.seq (.store plIv (.get plCu (.var "pl.z")) (.var "pl.u"))
+                    (.seq (.store plCu (.var "pl.z")
+                        (.add (.get plCu (.var "pl.z")) (.lit 1)))
+                      (.assign "pl.k" (.add (.var "pl.k") (.lit 1)))))))
+              (.assign "pl.i" (.add (.var "pl.i") (.lit 1)))))))
+      (fun _ σ' => I σ' ∧ σ'.vars "pl.i" = i + 1) (K i) := by
+    intro i hi
+    rintro σ ⟨⟨hbase, _, hp⟩, hvi⟩
+    have hemi : e i ≤ e (i + 1) := hemono _ _ (by omega) (by omega)
+    have heiM : e (i + 1) ≤ M := by rw [← heN]; exact hemono _ _ (by omega) le_rfl
+    obtain ⟨hn, hodL, hreL, hrwL, hcuL, hivL, hodv, hrev, hrwv⟩ := id hbase
+    let σ1 := σ.setVar "pl.u" (row i)
+    let σ2 := σ1.setVar "pl.k" (e i)
+    let σ3 := σ2.setVar "pl.g" (e (i + 1))
+    have huRun : Run B (.assign "pl.u" (.get od (.var "pl.i"))) σ σ1 3 := by
+      have hev := RunStep.eval_get B σ od (.var "pl.i") i
+        (by simpa [hvi] using (evalB_var (B := B) (x := "pl.i") (σ := σ) (by omega)))
+        (by omega) (by rw [hodv i hi]; exact lt_trans (hrow i hi) (by omega))
+      simpa only [σ1, hodv i hi, Expr.size] using Run.assign (x := "pl.u") hev
+    have hkRun : Run B (.assign "pl.k" (.get plRe (.var "pl.i"))) σ1 σ2 3 := by
+      have hev := RunStep.eval_get B σ1 plRe (.var "pl.i") i
+        (by simpa [σ1, hvi] using (evalB_var (B := B) (x := "pl.i") (σ := σ1)
+          (by simp [σ1, hvi]; omega)))
+        (by simp [σ1]; omega) (by change (σ.arrs plRe).getD i 0 < B; rw [hrev i (by omega)]; omega)
+      simpa only [σ1, σ2, arrs_setVar, hrev i (by omega), Expr.size] using Run.assign (x := "pl.k") hev
+    have hgRun : Run B (.assign "pl.g" (.get plRe (.add (.var "pl.i") (.lit 1)))) σ2 σ3 5 := by
+      have hevi : (Expr.add (.var "pl.i") (.lit 1)).evalB B σ2 = some (i + 1) := by
+        have h := evalB_bin (B := B) (σ := σ2) (op := .add)
+          (e := Expr.var "pl.i") (f := Expr.lit 1)
+          (evalB_var (by simp [σ2, σ1, hvi]; omega)) (evalB_lit (by omega))
+          (by simp [σ2, σ1, hvi]; omega)
+        simpa [σ2, σ1, hvi] using h
+      have hev := RunStep.eval_get B σ2 plRe (.add (.var "pl.i") (.lit 1)) (i + 1)
+        hevi (by simp [σ2, σ1]; omega)
+        (by change (σ.arrs plRe).getD (i + 1) 0 < B; rw [hrev (i + 1) (by omega)]; omega)
+      simpa only [σ3, σ2, σ1, arrs_setVar, hrev (i + 1) (by omega), Expr.size] using Run.assign (x := "pl.g") hev
+    obtain ⟨σ4, hir, hb4, hp4⟩ := (peelP4_inner_spec hNB hMB hdi hdc hi hemi heiM
+      (hrow i hi) hf (hown i hi)).run (σ := σ3) (by
+        refine ⟨?_, by simp [σ3, σ2, σ1], by simp [σ3], by simp [σ3, σ2], ?_⟩
+        · exact peelScBase_setVar (peelScBase_setVar (peelScBase_setVar hbase (by decide)) (by decide)) (by decide)
+        · simpa [PeelScPart, σ3, σ2, σ1, hvi] using hp)
+    have hi4 : σ4.vars "pl.i" = i := by
+      rw [hir.frame_var "pl.i" (by simp [Com.wvars])]
+      simp [σ3, σ2, σ1, hvi]
+    have hinc : Run B (.assign "pl.i" (.add (.var "pl.i") (.lit 1))) σ4
+        (σ4.setVar "pl.i" (i + 1)) 4 := by
+      have h := evalB_bin (B := B) (σ := σ4) (op := .add)
+        (e := Expr.var "pl.i") (f := Expr.lit 1)
+        (evalB_var (by omega)) (evalB_lit (by omega))
+        (by simp only [Bop.apply_add]; omega)
+      have hev : (Expr.add (.var "pl.i") (.lit 1)).evalB B σ4 = some (i + 1) := by simpa [hi4] using h
+      exact Run.assign hev
+    refine ⟨_, (huRun.seq (hkRun.seq (hgRun.seq (hir.seq hinc)))).mono (by dsimp [K]; omega), ?_, by simp⟩
+    refine ⟨peelScBase_setVar hb4 (by decide), by simp; omega, ?_⟩
+    simpa [PeelScPart] using hp4
+  have hloop := peel_forRangeSum "pl.i" "pl.n" I K (by omega)
+    (fun _ h => ⟨h.1.1, h.2.1⟩) hstep
+  rintro σ ⟨hb, hp⟩
+  have hinit : Run B (.assign "pl.i" (.lit 0)) σ (σ.setVar "pl.i" 0) 2 := Run.assign (evalB_lit (by omega))
+  obtain ⟨σ', hr, hI, hi⟩ := hloop.run (σ := σ.setVar "pl.i" 0) (by
+    refine ⟨⟨peelScBase_setVar hb (by decide), by simp, ?_⟩, by simp⟩
+    simpa [PeelScPart, he0] using hp)
+  have hsum : (∑ i ∈ Finset.range N, (K i + 4)) = 21 * M + 23 * N := by
+    have hwidth := peel_sum_widths (N := N) he0 (fun i hi => hemono i (i + 1) (by omega) (by omega))
+    rw [heN] at hwidth
+    have ht : ∀ i, K i + 4 = 21 * (e (i + 1) - e i) + 23 := by intro i; dsimp [K]
+    simp_rw [ht]
+    rw [Finset.sum_add_distrib, ← Finset.mul_sum, hwidth]
+    simp [Nat.mul_comm]
+  refine ⟨σ', (hinit.seq hr).mono (by rw [hsum]; omega), ?_⟩
+  simpa [hi, heN] using hI.2.2
+
+/-- Regroup pass 5 reindexes the source row lengths into carrier order. -/
+theorem peelP5B_spec {B N M : ℕ} {co ra : String} {e rk o : ℕ → ℕ}
+    (hNB : N + 1 < B) (hMB : M + 1 < B) (hcr : ra ≠ co) (hce : plRe ≠ co)
+    (hrk : ∀ i, i < N → rk i < N) (he : ∀ i, i ≤ N → e i ≤ M)
+    (ho : ∀ i, i ≤ N → o i ≤ M) (ho0 : o 0 = 0)
+    (hostep : ∀ i, i < N → o (i + 1) = o i + (e (rk i + 1) - e (rk i))) :
+    Spec B (fun σ => σ.vars "pl.n" = N ∧ N ≤ (σ.arrs ra).length ∧
+        N + 1 ≤ (σ.arrs plRe).length ∧ N + 1 ≤ (σ.arrs co).length ∧
+        (∀ i, i < N → (σ.arrs ra).getD i 0 = rk i) ∧
+        (∀ i, i ≤ N → (σ.arrs plRe).getD i 0 = e i))
+      (peelP5B co ra) (fun _ σ' => ∀ i, i ≤ N → (σ'.arrs co).getD i 0 = o i)
+      (25 * N + 9) := by
+  let I : Env → Prop := fun σ => σ.vars "pl.n" = N ∧ σ.vars "pl.i" ≤ N ∧
+    N ≤ (σ.arrs ra).length ∧ N + 1 ≤ (σ.arrs plRe).length ∧
+    N + 1 ≤ (σ.arrs co).length ∧
+    (∀ i, i < N → (σ.arrs ra).getD i 0 = rk i) ∧
+    (∀ i, i ≤ N → (σ.arrs plRe).getD i 0 = e i) ∧
+    (∀ i, i ≤ σ.vars "pl.i" → (σ.arrs co).getD i 0 = o i)
+  have hbody : Spec B (fun σ => I σ ∧ σ.vars "pl.i" < N)
+      (.seq (.assign "pl.k" (.get ra (.var "pl.i")))
+        (.seq (.store co (.add (.var "pl.i") (.lit 1))
+            (.add (.get co (.var "pl.i"))
+              (.sub (.get plRe (.add (.var "pl.k") (.lit 1))) (.get plRe (.var "pl.k")))))
+          (.assign "pl.i" (.add (.var "pl.i") (.lit 1)))))
+      (fun σ σ' => I σ' ∧ σ'.vars "pl.i" = σ.vars "pl.i" + 1) 21 := by
+    rintro σ ⟨⟨hn, hi, hrL, heL, hoL, hrv, hev, hov⟩, hiN⟩
+    have hrki := hrv _ hiN
+    have hrkiN := hrk _ hiN
+    have heki := hev (rk (σ.vars "pl.i")) (by omega)
+    have heki1 := hev (rk (σ.vars "pl.i") + 1) (by omega)
+    have hekiB := he (rk (σ.vars "pl.i")) (by omega)
+    have heki1B := he (rk (σ.vars "pl.i") + 1) (by omega)
+    have hoi := hov _ le_rfl
+    have hoiB := ho (σ.vars "pl.i") (by omega)
+    have hoi1B := ho (σ.vars "pl.i" + 1) (by omega)
+    have hstep := hostep _ hiN
+    run_vcg
+    dsimp only [I]
+    simp only [vars_setVar, vars_setArr, arrs_setVar, arrs_setArr]
+    simp only [show ("pl.n" : String) ≠ "pl.i" by decide,
+      show ("pl.n" : String) ≠ "pl.k" by decide,
+      show ("pl.i" : String) ≠ "pl.k" by decide, if_false, if_true,
+      hcr, hce, List.length_set]
+    refine ⟨⟨hn, by omega, hrL, heL, hoL, hrv, hev, ?_⟩, by trivial⟩
+    intro z hz
+    rw [getD_set _ _ _ (by omega)]
+    by_cases hez : z = σ.vars "pl.i" + 1
+    · rw [if_pos hez, hez, hrki, heki, heki1, hoi]
+      exact hstep.symm
+    · rw [if_neg hez]; exact hov z (by omega)
+    all_goals simp <;> simp only [← List.getD_eq_getElem?_getD] <;>
+      simp only [hrki, heki, heki1, hoi] <;> omega
+  have hloop := Spec.forRangeZero "pl.i" "pl.n" I N 21 (by omega)
+    (fun _ h => h.2.1) (fun _ h => h.1) hbody
+  rintro σ ⟨hn, hrL, heL, hoL, hrv, hev⟩
+  have h0 : Run B (.store co (.lit 0) (.lit 0)) σ (σ.setArr co 0 0) 3 :=
+    Run.store (evalB_lit (by omega)) (evalB_lit (by omega)) (by omega)
+  obtain ⟨σ', hr, hI, hi⟩ := hloop.run (σ := σ.setArr co 0 0) (by
+    dsimp [I]
+    simp only [hcr, hce, if_false, if_true, List.length_set, Nat.zero_le]
+    refine ⟨hn, by trivial, hrL, heL, hoL, hrv, hev, ?_⟩
+    intro z hz
+    have hez : z = 0 := by omega
+    subst z
+    rw [getD_set _ _ _ (by omega), if_pos rfl, ho0])
+  refine ⟨σ', (h0.seq hr).mono (by omega), ?_⟩
+  intro z hz
+  exact hI.2.2.2.2.2.2.2 z (by omega)
+
+/-- The rank interval containing a position of the emitted member stream. -/
+noncomputable def peelOwner (e row : ℕ → ℕ) (N p : ℕ) : ℕ :=
+  if h : p < e N then row (Nat.find (show ∃ j, p < e j from ⟨N, h⟩) - 1) else 0
+
+private theorem peel_interval_exists {e : ℕ → ℕ} {N p : ℕ} (h0 : e 0 = 0)
+    (hp : p < e N) : ∃ i, i < N ∧ e i ≤ p ∧ p < e (i + 1) := by
+  classical
+  have hex : ∃ j, p < e j := ⟨N, hp⟩
+  have hj := Nat.find_spec hex
+  have hjN := Nat.find_min' hex hp
+  have hj0 : 0 < Nat.find hex := by
+    by_contra hn
+    have heq : Nat.find hex = 0 := by omega
+    rw [heq, h0] at hj
+    omega
+  have hjp := Nat.find_min hex (show Nat.find hex - 1 < Nat.find hex by omega)
+  refine ⟨Nat.find hex - 1, by omega, by omega, ?_⟩
+  have heq : Nat.find hex - 1 + 1 = Nat.find hex := by omega
+  rw [heq]
+  exact hj
+
+private theorem peelOwner_at {e row : ℕ → ℕ} {N i p : ℕ}
+    (hi : i < N) (hmono : ∀ i j, i ≤ j → j ≤ N → e i ≤ e j)
+    (hlo : e i ≤ p) (hhi : p < e (i + 1)) : peelOwner e row N p = row i := by
+  classical
+  have hp : p < e N := lt_of_lt_of_le hhi (hmono _ _ (by omega) le_rfl)
+  rw [peelOwner, dif_pos hp]
+  have hx : ∃ j, p < e j := ⟨N, hp⟩
+  have hj := Nat.find_spec hx
+  have hjle : Nat.find hx ≤ i + 1 := Nat.find_min' hx hhi
+  have hjgt : i < Nat.find hx := by
+    by_contra hh
+    have hm := hmono (Nat.find hx) i (by omega) (by omega)
+    omega
+  have heq : Nat.find hx - 1 = i := by omega
+  simpa only [heq]
+
+/-- Natural-indexed access to an order permutation. -/
+noncomputable def peelRow {N : ℕ} (ρ : Equiv.Perm (Fin N)) (i : ℕ) : ℕ :=
+  if h : i < N then (ρ ⟨i, h⟩ : ℕ) else 0
+
+theorem peelRow_eq {N : ℕ} (ρ : Equiv.Perm (Fin N)) {i : ℕ} (hi : i < N) :
+    peelRow ρ i = (ρ ⟨i, hi⟩ : ℕ) := dif_pos hi
+
+/-- The mathematical source relation supplied by completed sweep segments. -/
+theorem peel_source_of_segments {N M : ℕ} {ρ : Equiv.Perm (Fin N)}
+    {e f : ℕ → ℕ} {X : Fin N → Set (Fin N)}
+    (he0 : e 0 = 0) (heN : e N = M)
+    (hemono : ∀ i j, i ≤ j → j ≤ N → e i ≤ e j)
+    (hseg : ∀ i, (hi : i < N) → SegAt f (e i) (e (i + 1)) (X (ρ ⟨i, hi⟩))) :
+    (∀ p, p < M → f p < N) ∧
+    (∀ p, p < M → peelOwner e (peelRow ρ) N p < N) ∧
+    (∀ p, (hp : p < M) → ∃ hv : f p < N, ∃ hu : peelOwner e (peelRow ρ) N p < N,
+      (⟨f p, hv⟩ : Fin N) ∈ X ⟨peelOwner e (peelRow ρ) N p, hu⟩) ∧
+    (∀ u z : Fin N, z ∈ X u → ∃ p, p < M ∧ peelOwner e (peelRow ρ) N p = u ∧ f p = z) ∧
+    (∀ p q, p < M → q < M → peelOwner e (peelRow ρ) N p = peelOwner e (peelRow ρ) N q →
+      f p = f q → p = q) := by
+  have hloc : ∀ p, p < M → ∃ i, i < N ∧ e i ≤ p ∧ p < e (i + 1) := by
+    intro p hp
+    exact peel_interval_exists he0 (by rwa [heN])
+  have hown : ∀ i, (hi : i < N) → ∀ p, e i ≤ p → p < e (i + 1) →
+      peelOwner e (peelRow ρ) N p = (ρ ⟨i, hi⟩ : ℕ) := by
+    intro i hi p hp1 hp2
+    rw [peelOwner_at hi hemono hp1 hp2, peelRow_eq ρ hi]
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
+  · intro p hp
+    obtain ⟨i, hi, hp1, hp2⟩ := hloc p hp
+    exact ((hseg i hi).1 p hp1 hp2).1
+  · intro p hp
+    obtain ⟨i, hi, hp1, hp2⟩ := hloc p hp
+    rw [hown i hi p hp1 hp2]
+    exact (ρ ⟨i, hi⟩).isLt
+  · intro p hp
+    obtain ⟨i, hi, hp1, hp2⟩ := hloc p hp
+    obtain ⟨hv, hm⟩ := (hseg i hi).1 p hp1 hp2
+    have ho := hown i hi p hp1 hp2
+    refine ⟨hv, by rw [ho]; exact (ρ ⟨i, hi⟩).isLt, ?_⟩
+    have huFin : (⟨peelOwner e (peelRow ρ) N p, by rw [ho]; exact (ρ ⟨i, hi⟩).isLt⟩ : Fin N) = ρ ⟨i, hi⟩ := Fin.ext ho
+    rw [huFin]
+    exact hm
+  · intro u z hz
+    let i : Fin N := ρ.symm u
+    have hu : ρ i = u := ρ.apply_symm_apply u
+    obtain ⟨p, hp1, hp2, hp3⟩ := (hseg i i.isLt).2.1 z (by simpa [hu] using hz)
+    exact ⟨p, lt_of_lt_of_le hp2 ((hemono _ _ (by omega) le_rfl).trans_eq heN),
+      by rw [hown i i.isLt p hp1 hp2]; exact congrArg Fin.val hu, hp3⟩
+  · intro p q hp hq ho hf
+    obtain ⟨i, hi, hp1, hp2⟩ := hloc p hp
+    obtain ⟨j, hj, hq1, hq2⟩ := hloc q hq
+    rw [hown i hi p hp1 hp2, hown j hj q hq1 hq2] at ho
+    have hij : i = j := congrArg Fin.val (ρ.injective (Fin.ext ho))
+    subst j
+    exact (hseg i hi).2.2 p q hp1 hp2 hq1 hq2 hf
+
+/-- The canonical output offsets, in ascending carrier order. -/
+noncomputable def peelCOff {N : ℕ} (X : Fin N → Set (Fin N)) (z : ℕ) : ℕ :=
+  ∑ i ∈ Finset.range z, if h : i < N then (X ⟨i, h⟩).ncard else 0
+
+@[simp] theorem peelCOff_zero {N : ℕ} (X : Fin N → Set (Fin N)) : peelCOff X 0 = 0 := rfl
+
+theorem peelCOff_succ {N : ℕ} (X : Fin N → Set (Fin N)) (u : Fin N) :
+    peelCOff X (u + 1) = peelCOff X u + (X u).ncard := by
+  rw [peelCOff, Finset.sum_range_succ, dif_pos u.isLt]
+  rfl
+
+theorem peelCOff_mono {N : ℕ} (X : Fin N → Set (Fin N)) {i j : ℕ} (h : i ≤ j) :
+    peelCOff X i ≤ peelCOff X j := Finset.sum_le_sum_of_subset (Finset.range_mono h)
+
+theorem peelCOff_last {N : ℕ} {X : Fin N → Set (Fin N)} :
+    peelCOff X N = ∑ u : Fin N, (X u).ncard := by
+  rw [peelCOff, ← Fin.sum_univ_eq_sum_range]
+  simp
+
+/-- Source segment mass equals the canonical output mass, independently of the permutation. -/
+theorem peelCOff_eq_mass {N : ℕ} {ρ : Equiv.Perm (Fin N)} {X : Fin N → Set (Fin N)}
+    {e : ℕ → ℕ} (he0 : e 0 = 0)
+    (hstep : ∀ i, (hi : i < N) → e (i + 1) = e i + (X (ρ ⟨i, hi⟩)).ncard) :
+    peelCOff X N = e N := by
+  rw [peelCOff_last]
+  have hemono : ∀ i, i < N → e i ≤ e (i + 1) := by intro i hi; rw [hstep i hi]; omega
+  have hwidth := peel_sum_widths (N := N) he0 hemono
+  have hsum : (∑ i ∈ Finset.range N, (e (i + 1) - e i)) =
+      ∑ i : Fin N, (X (ρ i)).ncard := by
+    rw [← Fin.sum_univ_eq_sum_range]
+    apply Finset.sum_congr rfl
+    intro i _
+    rw [hstep i i.isLt]
+    simp
+  rw [hsum] at hwidth
+  rw [← Equiv.sum_comp ρ (fun u => (X u).ncard)]
+  exact hwidth
 
 end Lax3Proofs.Prog
