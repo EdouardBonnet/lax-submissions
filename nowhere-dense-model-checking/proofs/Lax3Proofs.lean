@@ -137,6 +137,7 @@ import Lax3Proofs.SolveSweepAugStepScan
 import Lax3Proofs.SolveSweepAugRound
 import Lax3Proofs.SolveSweepAugCsr
 import Lax3Proofs.SolveSweepAugBuildPeel
+import Lax3Proofs.SolveSweepAugSym
 import Lax3Proofs.SolveSweepAugPairFilter
 import Lax3Proofs.SolveSweepAugExtract
 import Lax3Proofs.SolveSweepPeel
