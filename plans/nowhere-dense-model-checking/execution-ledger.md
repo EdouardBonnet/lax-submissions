@@ -59,6 +59,15 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — sparse pair preparation landed
+
+`bedc1cc` lands checkpoint `69a1a00`: actual CSR rows yield the unique
+occupied-key dictionary in `58M + 26N + 8`; the rank and diagonal filters
+cost `96M + 10` and produce exactly `baseOr` and the simple fraternity graph.
+The diagonal filter reads no rank array. Source storage and all lengths are
+preserved. Supervisor build, archive inspection, and axiom audit pass using
+only the three logical axioms.
+
 ### 2026-09-05 — sparse key-to-CSR constructor landed
 
 `623d4b2` lands checkpoint `4ec95e6` and imports `SolveSweepAugCsr`.
