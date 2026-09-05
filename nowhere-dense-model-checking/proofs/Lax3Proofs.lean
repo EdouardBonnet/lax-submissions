@@ -145,6 +145,7 @@ import Lax3Proofs.SolveRunWords
 import Lax3Proofs.SolveChannels
 import Lax3Proofs.SolveCodegen
 import Lax3Proofs.SolveStageCharge
+import Lax3Proofs.SolveFrameCharge
 
 -- The proofs package of submission Lax3.
 --
