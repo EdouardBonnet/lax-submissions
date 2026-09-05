@@ -59,6 +59,17 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-06 — complete sparse augmentation machine landed
+
+Reviewed `9dbb178`, landed through `4ed0954`. `AugMachine.com_spec` computes
+the exact deterministic `mdChain` from genuine padded CSR and uninitialized
+reserved arrays with bounded words. Every base/round/final machine phase is
+composed; no assumed machine callback or incoming rank remains. Allocation
+is finite, scans follow occupied prefixes, and every heap logarithm remains
+in the transparent cost. Full archive build, concrete consumers (including
+the `cp.r` array frame), and standard-axiom checks pass. Clean cover integration
+can now instantiate this concrete core; its uniform cost comparison is next.
+
 ### 2026-09-05 — guarded scalar recurrence and uniform time landed
 
 `bb0c3dc` adds `SolveFrameCharge`. `chargeFrameK_guard` pays the actual
