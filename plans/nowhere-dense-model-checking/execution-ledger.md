@@ -59,6 +59,15 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — array word invariant landed
+
+`8b73308` adds `SolveRunWords`: every bounded run preserves `ArrWords`,
+with a specification lift at the same command and cost. This supplies the
+stale inverse-cell bound required at sparse AUG entry. PREP's recursive
+content contract now threads this alongside the clean rank prefix.
+Narrow build and full archive inspection pass; the preservation theorem
+uses only `propext` and `Quot.sound`. No array clearing was added.
+
 ### 2026-09-05 — full cover sweep landed
 
 `3ad2ed7` lands PEEL checkpoint `3034240` and its root import.
