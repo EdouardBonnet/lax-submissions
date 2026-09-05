@@ -130,6 +130,8 @@ import Lax3Proofs.SolveSweepAugStep
 import Lax3Proofs.SolveSweepAugStepScan
 import Lax3Proofs.SolveSweepAugRound
 import Lax3Proofs.SolveSweepAugCsr
+import Lax3Proofs.SolveSweepAugPairFilter
+import Lax3Proofs.SolveSweepAugExtract
 import Lax3Proofs.SolveSweepPeel
 import Lax3Proofs.SolveRunWords
 import Lax3Proofs.SolveChannels
