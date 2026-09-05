@@ -59,6 +59,15 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-05 — complete compiler layout landed
+
+`171342f` adds `SolveCodegen`. A structural traversal of the actual command
+collects all scalar/array names and enough temporary cells, proving `Com.Ok`
+for every command. `mc_auto_computesInTime_of_solveSpec` removes the old
+two-temporary layout restriction and the manual compilation premise; its
+span is absorbed into the same squared word-room constant. Full archive
+inspection and axiom audit pass at the existing setup baseline.
+
 ### 2026-09-05 — exact sparse greedy augmentation round landed
 
 `3414a87` lands checkpoint `fd377ab` and imports all four new satellites.
