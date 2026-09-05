@@ -1,4 +1,4 @@
-import Lax3Proofs.SolveMachPrep
+import Lax3Proofs.SolvePrepCleanState
 import Lax3Proofs.SolveFrameStages
 import Lax3Proofs.SolveChainRestrict
 import Lax3Proofs.SolveChainCover
@@ -10,9 +10,9 @@ import Lax3Proofs.SolveSeamTop
 `childLoadParts_of` and `childLoadPartsAll_of` discharge the complete
 child-building machine pass.
 The supports, profile, colour and isolation stages are composed below
-without a residual machine specification. The rank scratch is still zeroed
-per child and is charged honestly; the final almost-linear assembly needs
-cleanliness threaded through the recursive invariant, as described below.
+without a residual machine specification. The reusable `prepCleanCom` consumes and returns root-prefix rank
+cleanliness and bounded array words. It clears only touched cluster entries.
+`prepCom` remains as a compatibility pass with an explicit carrier reset.
 
 `SolveMachPrep` named **`ChildLoadPartsAll`** — the per-centre machine
 pass that builds the child of centre `u`: from the loop invariant at
@@ -23,7 +23,7 @@ channel `prepChan` — with the `ProfileTablesMS` witness carried
 existentially, the level-`j` cells and regions untouched, and no
 reallocation. This file discharges it with a real program:
 
-* **Batch assembly** (§5–§6): zero the rank scratch, copy the centre's
+* **Batch assembly** (§5–§6): use the clean rank scratch, copy the centre's
   cluster row off the cover CSR (`ClusterList`), mark the cluster's
   ranks, trace the parent channel's row `u` on the cluster
   (`{u} ∪ ⋃_e column_e(u)` — the F6c12p batch), build the padded
@@ -61,24 +61,22 @@ columns beyond the history are pinned empty (`hpinE`). Under this
 discipline the filtered channel lands at unchanged column indices and
 the new column is written in place — no stride conversion pass.
 
-## The scratch-cleanliness deviation (flagged)
+## Reusable scratch contents
 
-`restrictCom_specW` requires the rank scratch **clean** (`A.N` zeros),
-and the pass's fixed precondition (`CLInv`, which carries no scratch
-cleanliness clause) cannot supply it, so the pass zeroes the scratch itself —
-`11 * A.N + 6` per centre in `prepK`. Per the design this zeroing is
-charged once per node; threading a cleanliness clause through `CLInv`
-would remove the per-centre term but touches landed files, so it is
-recorded here and priced honestly instead.
+`prepCleanCom` uses one shared root-sized rank array. The descriptor `Scr`
+still concerns allocation lengths; `PrepClean` separately carries zero ranks
+on the root prefix and bounded words in all arrays. The row and touched-clear
+loops preserve entries beyond the current arena, and `restrictCom_specW_suffix`
+returns a clean current prefix while preserving that suffix. The later stages
+never write rank cells. Thus every child boundary returns the root invariant,
+including after a recursive call through the `SolvePrepClean` satellites.
 
-## The seam lemmas (F6c12p's mirror, §1)
-
-`cdist_eq_ballDist` and `cdescend_eq_descend`: the abstract canonical
-kit (`BatchCanon`) and the machine kit (`Prog.ballDist`,
-`Impl.descend`) are formula-identical mirrors — one filter-decidability
-transport and one well-founded induction. They are what lets F7 pin
-`htabF (j+1)` (stated on `pathList`) to this file's `prepChan` (stated
-on the machine kit).
+The materializer already allocates fresh zero scratch. Its frame across the
+root load establishes the initial invariant without another reset program.
+The old `prepCom` and `prepK` are retained as compatibility interfaces; the
+reusable pass removes exactly `11 * A.N + 5` from that per-child charge (the
+reset is replaced by a one-step skip). No carrier-sized clear occurs in
+`prepCleanCom`.
 -/
 
 namespace Lax3Proofs.Prog
@@ -1090,10 +1088,10 @@ def prepIsolateCom (j : ℕ) : Com :=
 
 open Classical in
 /-- **The whole pass** (§5a–§5l in order). -/
-noncomputable def prepCom (S : Setup L) (ℓp hbf : ℕ → ℕ)
+private noncomputable def prepModeCom (reset : Bool) (S : Setup L) (ℓp hbf : ℕ → ℕ)
     (co cm : ℕ → String) (j : ℕ) : Com :=
   .seq (prepRowBoundsCom (co j) (ctrName j))
-    (.seq (prepZeroCom (arenaNames j).nN)
+    (.seq (if reset then prepZeroCom (arenaNames j).nN else .skip)
       (.seq (prepRowCom (cm j))
         (.seq (prepCentreCom (ctrName j))
           (.seq (prepBatchCom (arenaNames j).hist (ctrName j) (ℓp j) (hbf j))
@@ -1107,6 +1105,17 @@ noncomputable def prepCom (S : Setup L) (ℓp hbf : ℕ → ℕ)
                         (.seq (prepColCom S j)
                           (prepIsolateCom j))))))))))))
 
+
+/-- The compatibility pass includes the full carrier initialisation. -/
+noncomputable def prepCom (S : Setup L) (ℓp hbf : ℕ → ℕ)
+    (co cm : ℕ → String) (j : ℕ) : Com :=
+  prepModeCom true S ℓp hbf co cm j
+
+/-- The reusable pass clears only the touched cluster entries. -/
+noncomputable def prepCleanCom (S : Setup L) (ℓp hbf : ℕ → ℕ)
+    (co cm : ℕ → String) (j : ℕ) : Com :=
+  prepModeCom false S ℓp hbf co cm j
+
 /-! ## §6 The budget -/
 
 open Classical in
@@ -1115,7 +1124,7 @@ zeroing (carrier-sized — the cleanliness deviation, module docstring),
 the cluster-row pass, the channel-row trace, the width scan and pad,
 the clear, the five landed stage budgets at the child's dimensions
 (radius `2R`), the colour write, and the glue. -/
-noncomputable def prepK (S : Setup L) (ord : CoverSpec.OrderingRoutine)
+private noncomputable def prepModeK (reset : Bool) (S : Setup L) (ord : CoverSpec.OrderingRoutine)
     (ℓp hbf : ℕ → ℕ) (j : ℕ) (A : Arena (S.pal j) n₀) (u : ℕ) : ℕ :=
   if h : u < A.N then
     let π := (ord A.N A.G).order
@@ -1123,7 +1132,7 @@ noncomputable def prepK (S : Setup L) (ord : CoverSpec.OrderingRoutine)
     let cns := ∑ v : Fin (childN S A π ⟨u, h⟩),
       (preG S A π ⟨u, h⟩).degree v
     20                                                      -- row bounds
-    + (11 * A.N + 6)                                        -- zero
+    + (if reset then 11 * A.N + 6 else 1)                                        -- zero
     + (30 * k + 6)                                          -- row pass
     + 20                                                    -- centre
     + ((30 + 30 * (hbf j + 1)) * ℓp j + 20)                 -- batch trace
@@ -1139,6 +1148,17 @@ noncomputable def prepK (S : Setup L) (ord : CoverSpec.OrderingRoutine)
     + isolateK k cns                                        -- isolate
     + 30                                                    -- seq slack
   else 0
+
+
+/-- The compatibility budget, including carrier initialisation. -/
+noncomputable def prepK (S : Setup L) (ord : CoverSpec.OrderingRoutine)
+    (ℓp hbf : ℕ → ℕ) (j : ℕ) (A : Arena (S.pal j) n₀) (u : ℕ) : ℕ :=
+  prepModeK true S ord ℓp hbf j A u
+
+/-- Per-child work with no carrier-sized reset term. -/
+noncomputable def prepCleanK (S : Setup L) (ord : CoverSpec.OrderingRoutine)
+    (ℓp hbf : ℕ → ℕ) (j : ℕ) (A : Arena (S.pal j) n₀) (u : ℕ) : ℕ :=
+  prepModeK false S ord ℓp hbf j A u
 
 open Classical in
 /-- `prepK` at a carrier member, the guard discharged — the closed form
@@ -1172,7 +1192,82 @@ theorem prepK_coe (S : Setup L) (ord : CoverSpec.OrderingRoutine)
             (∑ v : Fin (childN S A ((ord A.N A.G).order) u),
               (preG S A ((ord A.N A.G).order) u).degree v)
         + 30 := by
-  rw [prepK, dif_pos u.2]
+  rw [prepK, prepModeK, dif_pos u.2]
+  rfl
+
+open Classical in
+private theorem prepModeK_coe (reset : Bool) (S : Setup L) (ord : CoverSpec.OrderingRoutine)
+    (ℓp hbf : ℕ → ℕ) (j : ℕ) (A : Arena (S.pal j) n₀) (u : Fin A.N) :
+    prepModeK reset S ord ℓp hbf j A (u : ℕ)
+      = 20 + (if reset then 11 * A.N + 6 else 1)
+        + (30 * childN S A ((ord A.N A.G).order) u + 6)
+        + 20
+        + ((30 + 30 * (hbf j + 1)) * ℓp j + 20)
+        + ((30 * childN S A ((ord A.N A.G).order) u + 6)
+            + (12 * S.width + 20))
+        + (14 * childN S A ((ord A.N A.G).order) u + 20)
+        + (20 + restrictK
+            (Impl.degSum A.G (cluster S A ((ord A.N A.G).order) u))
+            (childN S A ((ord A.N A.G).order) u) (S.pal j) (ℓp j) (hbf j))
+        + (20 + bfsK (childN S A ((ord A.N A.G).order) u)
+            (∑ v : Fin (childN S A ((ord A.N A.G).order) u),
+              (preG S A ((ord A.N A.G).order) u).degree v) (2 * S.R))
+        + (30 + supportsK (childN S A ((ord A.N A.G).order) u)
+            (∑ v : Fin (childN S A ((ord A.N A.G).order) u),
+              (preG S A ((ord A.N A.G).order) u).degree v) (2 * S.R))
+        + profilesK S.width (S.pal j + 1)
+            (childN S A ((ord A.N A.G).order) u)
+            (∑ v : Fin (childN S A ((ord A.N A.G).order) u),
+              (preG S A ((ord A.N A.G).order) u).degree v) S.R
+        + ((30 * (isoPal (relPal (S.pal j)) S.width S.R) + 9)
+            * childN S A ((ord A.N A.G).order) u + 6)
+        + isolateK (childN S A ((ord A.N A.G).order) u)
+            (∑ v : Fin (childN S A ((ord A.N A.G).order) u),
+              (preG S A ((ord A.N A.G).order) u).degree v)
+        + 30 := by
+  rw [prepModeK, dif_pos u.2]
+
+open Classical in
+theorem prepCleanK_coe (S : Setup L) (ord : CoverSpec.OrderingRoutine)
+    (ℓp hbf : ℕ → ℕ) (j : ℕ) (A : Arena (S.pal j) n₀) (u : Fin A.N) :
+    prepCleanK S ord ℓp hbf j A (u : ℕ)
+      = 20 + 1
+        + (30 * childN S A ((ord A.N A.G).order) u + 6)
+        + 20
+        + ((30 + 30 * (hbf j + 1)) * ℓp j + 20)
+        + ((30 * childN S A ((ord A.N A.G).order) u + 6)
+            + (12 * S.width + 20))
+        + (14 * childN S A ((ord A.N A.G).order) u + 20)
+        + (20 + restrictK
+            (Impl.degSum A.G (cluster S A ((ord A.N A.G).order) u))
+            (childN S A ((ord A.N A.G).order) u) (S.pal j) (ℓp j) (hbf j))
+        + (20 + bfsK (childN S A ((ord A.N A.G).order) u)
+            (∑ v : Fin (childN S A ((ord A.N A.G).order) u),
+              (preG S A ((ord A.N A.G).order) u).degree v) (2 * S.R))
+        + (30 + supportsK (childN S A ((ord A.N A.G).order) u)
+            (∑ v : Fin (childN S A ((ord A.N A.G).order) u),
+              (preG S A ((ord A.N A.G).order) u).degree v) (2 * S.R))
+        + profilesK S.width (S.pal j + 1)
+            (childN S A ((ord A.N A.G).order) u)
+            (∑ v : Fin (childN S A ((ord A.N A.G).order) u),
+              (preG S A ((ord A.N A.G).order) u).degree v) S.R
+        + ((30 * (isoPal (relPal (S.pal j)) S.width S.R) + 9)
+            * childN S A ((ord A.N A.G).order) u + 6)
+        + isolateK (childN S A ((ord A.N A.G).order) u)
+            (∑ v : Fin (childN S A ((ord A.N A.G).order) u),
+              (preG S A ((ord A.N A.G).order) u).degree v)
+        + 30 := by
+  rw [prepCleanK, prepModeK, dif_pos u.2]
+  rfl
+
+open Classical in
+/-- The compatibility pass pays exactly for its additional carrier reset. -/
+theorem prepK_eq_prepCleanK_add (S : Setup L) (ord : CoverSpec.OrderingRoutine)
+    (ℓp hbf : ℕ → ℕ) (j : ℕ) (A : Arena (S.pal j) n₀) (u : Fin A.N) :
+    prepK S ord ℓp hbf j A (u : ℕ) =
+      prepCleanK S ord ℓp hbf j A (u : ℕ) + (11 * A.N + 5) := by
+  rw [prepK_coe, prepCleanK_coe]
+  omega
 
 /-! ## §6b The write sets -/
 
@@ -1240,7 +1335,7 @@ theorem warrs_prepCom {S : Setup L} {ℓp hbf : ℕ → ℕ} {co cm : ℕ → St
         ∨ (∃ i, b = lv "cq.d" i) ∨ (∃ i, b = lv "cq.v" i)
         ∨ ∃ i, b = lv "cq.u" i := by
   intro b hb
-  simp only [prepCom, Com.warrs, List.mem_append] at hb
+  simp only [prepCom, prepModeCom, Bool.true_eq, ↓reduceIte, Com.warrs, List.mem_append] at hb
   rcases hb with hb | hb | hb | hb | hb | hb | hb | hb | hb | hb | hb
     | hb | hb
   · -- row bounds: writes no array
@@ -1325,7 +1420,7 @@ theorem warrs_prepCom {S : Setup L} {ℓp hbf : ℕ → ℕ} {co cm : ℕ → St
 open Classical in
 /-- **§5b's zero pass**: the rank scratch's carrier prefix is all-zero;
 nothing else moves. -/
-theorem prepZero_spec {B N : ℕ} {nNj : String} (hNB : N < B)
+private theorem prepZero_spec_suffix {B N : ℕ} {nNj : String} (hNB : N < B)
     (hnN : nNj ≠ "cp.i") :
     Spec B
       (fun σ => σ.vars nNj = N ∧ N ≤ (σ.arrs "cp.r").length)
@@ -1334,7 +1429,8 @@ theorem prepZero_spec {B N : ℕ} {nNj : String} (hNB : N < B)
         (∀ p, p < N → (σ'.arrs "cp.r").getD p 0 = 0) ∧
         (∀ b, b ≠ "cp.r" → σ'.arrs b = σ.arrs b) ∧
         (∀ b, (σ'.arrs b).length = (σ.arrs b).length) ∧
-        (∀ y, y ≠ "cp.i" → σ'.vars y = σ.vars y))
+        (∀ y, y ≠ "cp.i" → σ'.vars y = σ.vars y) ∧
+        (∀ p, N ≤ p → (σ'.arrs "cp.r").getD p 0 = (σ.arrs "cp.r").getD p 0))
       (11 * N + 6) := by
   intro σ0 hσ0
   obtain ⟨hnNv, hraL⟩ := hσ0
@@ -1343,12 +1439,13 @@ theorem prepZero_spec {B N : ℕ} {nNj : String} (hNB : N < B)
     (∀ p, p < σ.vars "cp.i" → (σ.arrs "cp.r").getD p 0 = 0) ∧
     (∀ b, b ≠ "cp.r" → σ.arrs b = σ0.arrs b) ∧
     (∀ b, (σ.arrs b).length = (σ0.arrs b).length) ∧
-    (∀ y, y ≠ "cp.i" → σ.vars y = σ0.vars y) with hI_def
+    (∀ y, y ≠ "cp.i" → σ.vars y = σ0.vars y) ∧
+    (∀ p, N ≤ p → (σ.arrs "cp.r").getD p 0 = (σ0.arrs "cp.r").getD p 0) with hI_def
   have hbody : Spec B (fun σ => I σ ∧ σ.vars "cp.i" < N)
       (.seq (.store "cp.r" (.var "cp.i") (.lit 0))
         (.assign "cp.i" (.add (.var "cp.i") (.lit 1))))
       (fun σ σ' => I σ' ∧ σ'.vars "cp.i" = σ.vars "cp.i" + 1) 7 := by
-    rintro σ ⟨⟨h1, hile, h2, h3, h4, h5⟩, hlt⟩
+    rintro σ ⟨⟨h1, hile, h2, h3, h4, h5, htail⟩, hlt⟩
     have hraLσ : N ≤ (σ.arrs "cp.r").length := by
       rw [h4 "cp.r"]; exact hraL
     have hiB : σ.vars "cp.i" < B := lt_trans hlt hNB
@@ -1367,7 +1464,7 @@ theorem prepZero_spec {B N : ℕ} {nNj : String} (hNB : N < B)
       rwa [Bop.apply_add, hmi] at h
     refine ⟨σm.setVar "cp.i" (σ.vars "cp.i" + 1),
       (hr1.seq (Run.assign heval)).mono (by simp), ?_, ?_⟩
-    · refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
+    · refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
       · rw [vars_setVar, if_neg hnN, hσm, vars_setArr]
         exact h1
       · rw [vars_setVar, if_pos rfl]
@@ -1389,33 +1486,53 @@ theorem prepZero_spec {B N : ℕ} {nNj : String} (hNB : N < B)
       · intro y hy
         rw [vars_setVar, if_neg hy, hσm, vars_setArr]
         exact h5 y hy
+      · intro p hp
+        rw [arrs_setVar, hσm, arrs_setArr, if_pos rfl, getD_set_ne (by omega)]
+        exact htail p hp
     · rw [vars_setVar, if_pos rfl]
   obtain ⟨σ', hrun, hI', hctr'⟩ :=
     (Spec.forRangeZero "cp.i" nNj I N 7 hNB
       (fun σ hσ => hσ.2.1) (fun σ hσ => hσ.1) hbody) σ0
       (show I (σ0.setVar "cp.i" 0) by
         refine ⟨by rw [vars_setVar, if_neg hnN]; exact hnNv,
-          by rw [vars_setVar, if_pos rfl]; omega, ?_, ?_, ?_, ?_⟩
+          by rw [vars_setVar, if_pos rfl]; omega, ?_, ?_, ?_, ?_, ?_⟩
         · intro p hp
           rw [vars_setVar, if_pos rfl] at hp
           omega
         · intro b _; rw [arrs_setVar]
         · intro b; rw [arrs_setVar]
         · intro y hy
-          rw [vars_setVar, if_neg hy])
-  obtain ⟨h1', hile', h2', h3', h4', h5'⟩ := hI'
-  refine ⟨σ', hrun.mono (by omega), ?_, ?_, ?_, ?_⟩
+          rw [vars_setVar, if_neg hy]
+        · intro p _; rfl)
+  obtain ⟨h1', hile', h2', h3', h4', h5', htail'⟩ := hI'
+  refine ⟨σ', hrun.mono (by omega), ?_, ?_, ?_, ?_, htail'⟩
   · intro p hp
     exact h2' p (by rw [hctr']; exact hp)
   · exact h3'
   · exact h4'
   · exact h5'
 
+
+theorem prepZero_spec {B N : ℕ} {nNj : String} (hNB : N < B)
+    (hnN : nNj ≠ "cp.i") :
+    Spec B
+      (fun σ => σ.vars nNj = N ∧ N ≤ (σ.arrs "cp.r").length)
+      (prepZeroCom nNj)
+      (fun σ σ' =>
+        (∀ p, p < N → (σ'.arrs "cp.r").getD p 0 = 0) ∧
+        (∀ b, b ≠ "cp.r" → σ'.arrs b = σ.arrs b) ∧
+        (∀ b, (σ'.arrs b).length = (σ.arrs b).length) ∧
+        (∀ y, y ≠ "cp.i" → σ'.vars y = σ.vars y))
+      (11 * N + 6) := by
+  refine (prepZero_spec_suffix hNB hnN).post ?_
+  rintro σ σ' _ ⟨h1,h2,h3,h4,_⟩
+  exact ⟨h1,h2,h3,h4⟩
+
 open Classical in
 /-- **§5c's cluster-row pass**: the cluster-list scratch holds the row,
 the rank scratch marks every member with its rank `+1` (zero elsewhere
 on the carrier), the batch bits' cluster prefix is zero. -/
-theorem prepRow_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
+private theorem prepRow_spec_suffix {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
     (hNB : N < B) (hNNB : N * N < B) (hbk : base + X.ncard ≤ N * N)
     (hcm_la : cmj ≠ "cp.l") (hcm_ra : cmj ≠ "cp.r") (hcm_bb : cmj ≠ "cp.b") :
     Spec B
@@ -1442,7 +1559,8 @@ theorem prepRow_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
         (∀ b, b ≠ "cp.l" → b ≠ "cp.r" → b ≠ "cp.b" →
           σ'.arrs b = σ.arrs b) ∧
         (∀ b, (σ'.arrs b).length = (σ.arrs b).length) ∧
-        (∀ y, y ≠ "cp.i" → σ'.vars y = σ.vars y))
+        (∀ y, y ≠ "cp.i" → σ'.vars y = σ.vars y) ∧
+        (∀ p, N ≤ p → (σ'.arrs "cp.r").getD p 0 = (σ.arrs "cp.r").getD p 0))
       (25 * X.ncard + 6) := by
   intro σ0 hσ0
   obtain ⟨hs0, hn0, hcmL0, hrow0, hlaL0, hbbL0, hraL0, hra0⟩ := hσ0
@@ -1461,7 +1579,8 @@ theorem prepRow_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
     (∀ t, t < σ.vars "cp.i" → (σ.arrs "cp.b").getD t 0 = 0) ∧
     (∀ b, b ≠ "cp.l" → b ≠ "cp.r" → b ≠ "cp.b" → σ.arrs b = σ0.arrs b) ∧
     (∀ b, (σ.arrs b).length = (σ0.arrs b).length) ∧
-    (∀ y, y ≠ "cp.i" → σ.vars y = σ0.vars y) with hI_def
+    (∀ y, y ≠ "cp.i" → σ.vars y = σ0.vars y) ∧
+    (∀ p, N ≤ p → (σ.arrs "cp.r").getD p 0 = (σ0.arrs "cp.r").getD p 0) with hI_def
   have hbody : Spec B (fun σ => I σ ∧ σ.vars "cp.i" < k)
       (.seq (.store "cp.l" (.var "cp.i")
           (.get cmj (.add (.var "cp.s") (.var "cp.i"))))
@@ -1470,7 +1589,7 @@ theorem prepRow_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
           (.seq (.store "cp.b" (.var "cp.i") (.lit 0))
             (.assign "cp.i" (.add (.var "cp.i") (.lit 1))))))
       (fun σ σ' => I σ' ∧ σ'.vars "cp.i" = σ.vars "cp.i" + 1) 21 := by
-    rintro σ ⟨⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11⟩, hlt⟩
+    rintro σ ⟨⟨h1, h2, h3, h4, h5, h6, h7, h8, h9, h10, h11, htail⟩, hlt⟩
     set i := σ.vars "cp.i" with hi_def
     have hiB : i < B := by omega
     have h1B : (1 : ℕ) < B := by omega
@@ -1591,7 +1710,7 @@ theorem prepRow_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
         by rw [hvarsA _ (by decide)]; exact h2,
         by rw [hctr]; omega,
         by rw [hoth _ hcm_la hcm_ra hcm_bb]; exact h4, ?_, ?_, ?_, ?_,
-        ?_, ?_, ?_⟩
+        ?_, ?_, ?_, ?_⟩
       · -- la cells
         intro t ht htlt
         rw [hctr] at htlt
@@ -1636,6 +1755,9 @@ theorem prepRow_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
       · intro y hy
         rw [hvarsA y hy]
         exact h11 y hy
+      · intro p hp
+        rw [hraA, getD_set_ne (by omega)]
+        exact htail p hp
     · rw [vars_setVar, if_pos rfl]
   obtain ⟨σ', hrun, hI', hctr'⟩ :=
     (Spec.forRangeZero "cp.i" "cp.n" I k 21 (by omega)
@@ -1644,7 +1766,7 @@ theorem prepRow_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
         refine ⟨by rw [vars_setVar, if_neg (by decide)]; exact hs0,
           by rw [vars_setVar, if_neg (by decide)]; exact hn0,
           by rw [vars_setVar, if_pos rfl]; omega,
-          by rw [arrs_setVar], ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+          by rw [arrs_setVar], ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
         · intro t ht htlt
           rw [vars_setVar, if_pos rfl] at htlt
           omega
@@ -1659,14 +1781,49 @@ theorem prepRow_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
           omega
         · intro b _ _ _; rw [arrs_setVar]
         · intro b; rw [arrs_setVar]
-        · intro y hy; rw [vars_setVar, if_neg hy])
-  obtain ⟨-, -, -, -, h5', h6', h7', h8', h9', h10', h11'⟩ := hI'
-  refine ⟨σ', hrun.mono le_rfl, ?_, ?_, ?_, ?_, h9', h10', h11'⟩
+        · intro y hy; rw [vars_setVar, if_neg hy]
+        · intro p _; rfl)
+  obtain ⟨-, -, -, -, h5', h6', h7', h8', h9', h10', h11', htail'⟩ := hI'
+  refine ⟨σ', hrun.mono le_rfl, ?_, ?_, ?_, ?_, h9', h10', h11', htail'⟩
   · exact fun t ht => h5' t ht (by rw [hctr']; exact ht)
   · exact fun t ht => h6' t ht (by rw [hctr']; exact ht)
   · exact fun p hp hnp =>
       h7' p hp (fun t ht _ => hnp t ht)
   · exact fun t ht => h8' t (by rw [hctr']; exact ht)
+
+
+theorem prepRow_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
+    (hNB : N < B) (hNNB : N * N < B) (hbk : base + X.ncard ≤ N * N)
+    (hcm_la : cmj ≠ "cp.l") (hcm_ra : cmj ≠ "cp.r") (hcm_bb : cmj ≠ "cp.b") :
+    Spec B
+      (fun σ => σ.vars "cp.s" = base ∧ σ.vars "cp.n" = X.ncard ∧
+        base + X.ncard ≤ (σ.arrs cmj).length ∧
+        (∀ t : ℕ, ∀ ht : t < X.ncard,
+          (σ.arrs cmj).getD (base + t) 0
+            = (Impl.restrictEmb X ⟨t, ht⟩ : ℕ)) ∧
+        X.ncard ≤ (σ.arrs "cp.l").length ∧
+        X.ncard ≤ (σ.arrs "cp.b").length ∧
+        N ≤ (σ.arrs "cp.r").length ∧
+        (∀ p, p < N → (σ.arrs "cp.r").getD p 0 = 0))
+      (prepRowCom cmj)
+      (fun σ σ' =>
+        (∀ t : ℕ, ∀ ht : t < X.ncard,
+          (σ'.arrs "cp.l").getD t 0 = (Impl.restrictEmb X ⟨t, ht⟩ : ℕ)) ∧
+        (∀ t : ℕ, ∀ ht : t < X.ncard,
+          (σ'.arrs "cp.r").getD ((Impl.restrictEmb X ⟨t, ht⟩ : ℕ)) 0
+            = t + 1) ∧
+        (∀ p, p < N → (∀ t : ℕ, ∀ ht : t < X.ncard,
+            (Impl.restrictEmb X ⟨t, ht⟩ : ℕ) ≠ p) →
+          (σ'.arrs "cp.r").getD p 0 = 0) ∧
+        (∀ t, t < X.ncard → (σ'.arrs "cp.b").getD t 0 = 0) ∧
+        (∀ b, b ≠ "cp.l" → b ≠ "cp.r" → b ≠ "cp.b" →
+          σ'.arrs b = σ.arrs b) ∧
+        (∀ b, (σ'.arrs b).length = (σ.arrs b).length) ∧
+        (∀ y, y ≠ "cp.i" → σ'.vars y = σ.vars y))
+      (25 * X.ncard + 6) := by
+  refine (prepRow_spec_suffix X base hNB hNNB hbk hcm_la hcm_ra hcm_bb).post ?_
+  rintro σ σ' _ ⟨h1,h2,h3,h4,h5,h6,h7,_⟩
+  exact ⟨h1,h2,h3,h4,h5,h6,h7⟩
 
 open Classical in
 /-- **§5d's centre cell**: the centre's child name (its rank) lands in
@@ -1748,7 +1905,7 @@ open Classical in
 /-- **§5g's clear pass**: the marks are removed at exactly the cluster
 cells, so the rank scratch's carrier prefix is all-zero again — the
 cleanliness the restrict stage assumes. -/
-theorem prepClear_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
+private theorem prepClear_spec_suffix {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
     (hNB : N < B) (hNNB : N * N < B) (hbk : base + X.ncard ≤ N * N)
     (hcm_ra : cmj ≠ "cp.r") :
     Spec B
@@ -1766,7 +1923,8 @@ theorem prepClear_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
         (∀ p, p < N → (σ'.arrs "cp.r").getD p 0 = 0) ∧
         (∀ b, b ≠ "cp.r" → σ'.arrs b = σ.arrs b) ∧
         (∀ b, (σ'.arrs b).length = (σ.arrs b).length) ∧
-        (∀ y, y ≠ "cp.i" → σ'.vars y = σ.vars y))
+        (∀ y, y ≠ "cp.i" → σ'.vars y = σ.vars y) ∧
+        (∀ p, N ≤ p → (σ'.arrs "cp.r").getD p 0 = (σ.arrs "cp.r").getD p 0))
       (14 * X.ncard + 6) := by
   intro σ0 hσ0
   obtain ⟨hs0, hn0, hcmL0, hrow0, hraL0, hra0⟩ := hσ0
@@ -1782,13 +1940,14 @@ theorem prepClear_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
       (σ.arrs "cp.r").getD p 0 = 0) ∧
     (∀ b, b ≠ "cp.r" → σ.arrs b = σ0.arrs b) ∧
     (∀ b, (σ.arrs b).length = (σ0.arrs b).length) ∧
-    (∀ y, y ≠ "cp.i" → σ.vars y = σ0.vars y) with hI_def
+    (∀ y, y ≠ "cp.i" → σ.vars y = σ0.vars y) ∧
+    (∀ p, N ≤ p → (σ.arrs "cp.r").getD p 0 = (σ0.arrs "cp.r").getD p 0) with hI_def
   have hbody : Spec B (fun σ => I σ ∧ σ.vars "cp.i" < k)
       (.seq (.store "cp.r" (.get cmj (.add (.var "cp.s") (.var "cp.i")))
           (.lit 0))
         (.assign "cp.i" (.add (.var "cp.i") (.lit 1))))
       (fun σ σ' => I σ' ∧ σ'.vars "cp.i" = σ.vars "cp.i" + 1) 10 := by
-    rintro σ ⟨⟨h1, h2, hile, h3, h4, h5, h6, h7, h8⟩, hlt⟩
+    rintro σ ⟨⟨h1, h2, hile, h3, h4, h5, h6, h7, h8, htail⟩, hlt⟩
     set i := σ.vars "cp.i" with hi_def
     have hiB : i < B := by omega
     have h1B : (1 : ℕ) < B := by omega
@@ -1840,7 +1999,7 @@ theorem prepClear_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
         by rw [hvarsA _ (by decide)]; exact h2,
         by rw [hctr]; omega,
         by rw [arrs_setVar, hσ1, arrs_setArr, if_neg hcm_ra]; exact h3,
-        ?_, ?_, ?_, ?_, ?_⟩
+        ?_, ?_, ?_, ?_, ?_, ?_⟩
       · intro t ht htlt
         rw [hctr] at htlt
         rw [hraA]
@@ -1861,6 +2020,9 @@ theorem prepClear_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
       · intro y hy
         rw [hvarsA y hy]
         exact h8 y hy
+      · intro p hp
+        rw [hraA, getD_set_ne (by omega)]
+        exact htail p hp
     · rw [vars_setVar, if_pos rfl]
   obtain ⟨σ', hrun, hI', hctr'⟩ :=
     (Spec.forRangeZero "cp.i" "cp.n" I k 10 (by omega)
@@ -1869,7 +2031,7 @@ theorem prepClear_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
         refine ⟨by rw [vars_setVar, if_neg (by decide)]; exact hs0,
           by rw [vars_setVar, if_neg (by decide)]; exact hn0,
           by rw [vars_setVar, if_pos rfl]; omega,
-          by rw [arrs_setVar], ?_, ?_, ?_, ?_, ?_⟩
+          by rw [arrs_setVar], ?_, ?_, ?_, ?_, ?_, ?_⟩
         · intro t ht htlt
           rw [vars_setVar, if_pos rfl] at htlt
           omega
@@ -1878,9 +2040,10 @@ theorem prepClear_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
           exact hra0 p hp hnp
         · intro b _; rw [arrs_setVar]
         · intro b; rw [arrs_setVar]
-        · intro y hy; rw [vars_setVar, if_neg hy])
-  obtain ⟨-, -, -, -, h4', h5', h6', h7', h8'⟩ := hI'
-  refine ⟨σ', hrun.mono (by omega), ?_, h6', h7', h8'⟩
+        · intro y hy; rw [vars_setVar, if_neg hy]
+        · intro p _; rfl)
+  obtain ⟨-, -, -, -, h4', h5', h6', h7', h8', htail'⟩ := hI'
+  refine ⟨σ', hrun.mono (by omega), ?_, h6', h7', h8', htail'⟩
   intro p hp
   by_cases hpX : (⟨p, hp⟩ : Fin N) ∈ X
   · set t0 : Fin X.ncard := (setEquiv X).symm ⟨⟨p, hp⟩, hpX⟩ with ht0_def
@@ -1893,6 +2056,31 @@ theorem prepClear_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
     intro t ht hcontra
     have heq : Impl.restrictEmb X ⟨t, ht⟩ = ⟨p, hp⟩ := Fin.ext hcontra
     exact absurd (heq ▸ Impl.restrictEmb_mem X ⟨t, ht⟩) hpX
+
+
+theorem prepClear_spec {B N : ℕ} {cmj : String} (X : Set (Fin N)) (base : ℕ)
+    (hNB : N < B) (hNNB : N * N < B) (hbk : base + X.ncard ≤ N * N)
+    (hcm_ra : cmj ≠ "cp.r") :
+    Spec B
+      (fun σ => σ.vars "cp.s" = base ∧ σ.vars "cp.n" = X.ncard ∧
+        base + X.ncard ≤ (σ.arrs cmj).length ∧
+        (∀ t : ℕ, ∀ ht : t < X.ncard,
+          (σ.arrs cmj).getD (base + t) 0
+            = (Impl.restrictEmb X ⟨t, ht⟩ : ℕ)) ∧
+        N ≤ (σ.arrs "cp.r").length ∧
+        (∀ p, p < N → (∀ t : ℕ, ∀ ht : t < X.ncard,
+            (Impl.restrictEmb X ⟨t, ht⟩ : ℕ) ≠ p) →
+          (σ.arrs "cp.r").getD p 0 = 0))
+      (prepClearCom cmj)
+      (fun σ σ' =>
+        (∀ p, p < N → (σ'.arrs "cp.r").getD p 0 = 0) ∧
+        (∀ b, b ≠ "cp.r" → σ'.arrs b = σ.arrs b) ∧
+        (∀ b, (σ'.arrs b).length = (σ.arrs b).length) ∧
+        (∀ y, y ≠ "cp.i" → σ'.vars y = σ.vars y))
+      (14 * X.ncard + 6) := by
+  refine (prepClear_spec_suffix X base hNB hNNB hbk hcm_ra).post ?_
+  rintro σ σ' _ ⟨h1,h2,h3,h4,_⟩
+  exact ⟨h1,h2,h3,h4⟩
 
 open Classical in
 /-- **§5f's width-array pass**: scanning the batch bits in ascending
@@ -3632,7 +3820,7 @@ theorem wvars_prepCom {S : Setup L} {ℓp hbf : ℕ → ℕ} {co cm : ℕ → St
       y ∈ prepScalars ∨ y = (arenaNames (j + 1)).nN
         ∨ y = (arenaNames (j + 1)).nS := by
   intro y hy
-  simp only [prepCom, Com.wvars, List.mem_append] at hy
+  simp only [prepCom, prepModeCom, Bool.true_eq, ↓reduceIte, Com.wvars, List.mem_append] at hy
   rcases hy with hy | hy | hy | hy | hy | hy | hy | hy | hy | hy | hy
     | hy | hy
   · simp [prepRowBoundsCom, Com.wvars] at hy
@@ -4050,6 +4238,48 @@ private theorem prepTail_spec (B : ℕ) (S : Setup L)
     split_ifs <;> try rfl
     omega
 
+private theorem prepMode_wvars_subset {reset : Bool} {S : Setup L}
+    {ℓp hbf : ℕ → ℕ} {co cm : ℕ → String} {j : ℕ} :
+    (prepModeCom reset S ℓp hbf co cm j).wvars ⊆ (prepCom S ℓp hbf co cm j).wvars := by
+  cases reset
+  · intro y hy
+    simp only [prepModeCom, prepCom, Bool.false_eq_true, Bool.true_eq, ↓reduceIte,
+      Com.wvars, List.mem_append, List.not_mem_nil, false_or, or_false] at hy ⊢
+    tauto
+  · exact fun _ h => h
+
+private theorem prepMode_warrs_subset {reset : Bool} {S : Setup L}
+    {ℓp hbf : ℕ → ℕ} {co cm : ℕ → String} {j : ℕ} :
+    (prepModeCom reset S ℓp hbf co cm j).warrs ⊆ (prepCom S ℓp hbf co cm j).warrs := by
+  cases reset
+  · intro y hy
+    simp only [prepModeCom, prepCom, Bool.false_eq_true, Bool.true_eq, ↓reduceIte,
+      Com.warrs, List.mem_append, List.not_mem_nil, false_or, or_false] at hy ⊢
+    tauto
+  · exact fun _ h => h
+
+
+/-- The reusable pass has the reviewed pass's name discipline. -/
+theorem warrs_prepCleanCom {S : Setup L} {ℓp hbf : ℕ → ℕ} {co cm : ℕ → String}
+    {j : ℕ} :
+    ∀ b ∈ (prepCleanCom S ℓp hbf co cm j).warrs,
+      b ∈ prepArrays ∨ b = (arenaNames (j + 1)).up
+        ∨ b = (arenaNames (j + 1)).hist ∨ b = (arenaNames (j + 1)).col
+        ∨ b = (arenaNames (j + 1)).off ∨ b = (arenaNames (j + 1)).tgt
+        ∨ (∃ i, b = lv "cq.d" i) ∨ (∃ i, b = lv "cq.v" i)
+        ∨ ∃ i, b = lv "cq.u" i := by
+  intro b h
+  exact warrs_prepCom b (prepMode_warrs_subset h)
+
+/-- The reusable pass has the reviewed pass's name discipline. -/
+theorem wvars_prepCleanCom {S : Setup L} {ℓp hbf : ℕ → ℕ} {co cm : ℕ → String}
+    {j : ℕ} :
+    ∀ y ∈ (prepCleanCom S ℓp hbf co cm j).wvars,
+      y ∈ prepScalars ∨ y = (arenaNames (j + 1)).nN
+        ∨ y = (arenaNames (j + 1)).nS := by
+  intro y h
+  exact wvars_prepCom y (prepMode_wvars_subset h)
+
 /-! ## §7 The pass, assembled -/
 
 set_option maxHeartbeats 4000000 in
@@ -4057,7 +4287,7 @@ open Classical in
 /-- The real child-building program satisfies the verbatim parts contract.
 The hypotheses concern channel contents, allocation lengths, word bounds and
 fresh names; every machine stage is discharged in this file. -/
-theorem childLoadParts_of (B : ℕ) (S : Setup L)
+private theorem childLoadParts_mode (reset : Bool) (B : ℕ) (S : Setup L)
     (ord : CoverSpec.OrderingRoutine) (ℓp : ℕ → ℕ)
     (htabF : (j : ℕ) → (A : Arena (S.pal j) n₀) →
       Fin A.N → Fin (ℓp j) → List (Fin A.N))
@@ -4123,10 +4353,10 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
         (cm jc ≠ lv "cq.d" i ∧ cm jc ≠ lv "cq.v" i ∧
           cm jc ≠ lv "cq.u" i))
  :
-    ChildLoadParts B S ord ℓp htabF hbf Adm Scr ca co cm
-      (prepCom S ℓp hbf co cm)
+    ChildLoadPartsMode reset B S ord ℓp htabF hbf Adm Scr ca co cm
+      (prepModeCom reset S ℓp hbf co cm)
       (prepChan S ord ℓp htabF)
-      (fun _ j A u => prepK S ord ℓp hbf j A u) := by
+      (fun _ j A u => prepModeK reset S ord ℓp hbf j A u) := by
   intro k j A hdiag hAdm hbot u
   -- ### the ambient objects and bounds
   have hj1 : j + 1 ≤ S.depth := by omega
@@ -4176,7 +4406,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
     intro s hs
     fin_cases hs <;> exact lv_ne_lit (by decide) (by decide) j
   -- ### the precondition, unpacked
-  intro σ0 hpre
+  intro σ0 ⟨hpre, hcleanPre⟩
   obtain ⟨⟨⟨hAW0, htabL0, hscr0⟩, hctrA0, hcsr0, -⟩, hctr0⟩ := hpre
   clear hctrA0
   rw [← hπ_def] at hcsr0
@@ -4337,14 +4567,28 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
   have hB_n : σB.vars "cp.n" = kk := by
     rw [hσB_def, vars_setVar, if_pos rfl]
   -- ### §P2 the rank-scratch zero pass
-  obtain ⟨σ2, hrP2, hz2, harr2, hlen2, hvar2⟩ :=
-    (prepZero_spec (B := B) (N := A.N) (nNj := (arenaNames j).nN) hNB
-      (lv_ne_lit (by decide) (by decide) j)) σB
-      ⟨by
-        rw [hB_vars (arenaNames j).nN (lv_ne_lit (by decide) (by decide) j)
-          (lv_ne_lit (by decide) (by decide) j)]
-        exact hAW0.n_eq,
-       by rw [hB_arrs]; omega⟩
+  obtain ⟨σ2, hrP2, hz2, harr2, hlen2, hvar2, htail2⟩ :
+      ∃ σ2, Run B (if reset then prepZeroCom (arenaNames j).nN else .skip) σB σ2
+          (if reset then 11 * A.N + 6 else 1) ∧
+        (∀ p, p < A.N → (σ2.arrs "cp.r").getD p 0 = 0) ∧
+        (∀ b, b ≠ "cp.r" → σ2.arrs b = σB.arrs b) ∧
+        (∀ b, (σ2.arrs b).length = (σB.arrs b).length) ∧
+        (∀ y, y ≠ "cp.i" → σ2.vars y = σB.vars y) ∧
+        (∀ p, A.N ≤ p → (σ2.arrs "cp.r").getD p 0 = (σB.arrs "cp.r").getD p 0) := by
+    cases reset
+    · refine ⟨σB, Run.skip, ?_, fun _ _ => rfl, fun _ => rfl,
+        fun _ _ => rfl, fun _ _ => rfl⟩
+      intro p hp
+      rw [hB_arrs]
+      exact hcleanPre rfl p (lt_of_lt_of_le hp hNn0)
+    · exact
+      (prepZero_spec_suffix (B := B) (N := A.N) (nNj := (arenaNames j).nN) hNB
+        (lv_ne_lit (by decide) (by decide) j)) σB
+        ⟨by
+          rw [hB_vars (arenaNames j).nN (lv_ne_lit (by decide) (by decide) j)
+            (lv_ne_lit (by decide) (by decide) j)]
+          exact hAW0.n_eq,
+         by rw [hB_arrs]; omega⟩
   -- ### §P3 the cluster-row pass
   have hcm_la : cm j ≠ "cp.l" := by
     intro h
@@ -4358,8 +4602,8 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
     intro h
     exact absurd (h ▸ (by decide : ("cp.b" : String) ∈ prepArrays))
       (hcovP j).1.2.2
-  obtain ⟨σ3, hrP3, hla3, hmk3, hz3, hbb3, harr3, hlen3, hvar3⟩ :=
-    (prepRow_spec (B := B) (N := A.N) (cmj := cm j) clu base hNB hNNB
+  obtain ⟨σ3, hrP3, hla3, hmk3, hz3, hbb3, harr3, hlen3, hvar3, htail3⟩ :=
+    (prepRow_spec_suffix (B := B) (N := A.N) (cmj := cm j) clu base hNB hNNB
       hbase_sq hcm_la hcm_ra hcm_bb) σ2
       ⟨by rw [hvar2 "cp.s" (by decide), hB_s],
        by rw [hvar2 "cp.n" (by decide), hB_n]; exact hkclu,
@@ -4547,8 +4791,8 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       hvar4 "cp.n" (by decide), hvar3 "cp.n" (by decide),
       hvar2 "cp.n" (by decide), hB_n]
     exact hkclu
-  obtain ⟨σ7, hrP7, hz7, harr7, hlen7, hvar7⟩ :=
-    (prepClear_spec (B := B) (N := A.N) (cmj := cm j) clu base hNB hNNB
+  obtain ⟨σ7, hrP7, hz7, harr7, hlen7, hvar7, htail7⟩ :=
+    (prepClear_spec_suffix (B := B) (N := A.N) (cmj := cm j) clu base hNB hNNB
       hbase_sq hcm_ra) σ6
       ⟨hcp_s6,
        hcp_n6,
@@ -4706,8 +4950,8 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
   have hkn0 : clu.ncard ≤ n₀ :=
     le_trans (le_of_eq hkclu.symm) (le_trans hkN hNn0)
   obtain ⟨σ8, hrR8, hAWc8, hnsC8, hAWp8, hnsP8, hcl8, hrsk8, hraL8,
-    hraC8⟩ :=
-    (restrictCom_specW (B := B) (A := Impl.ofArena A (htabF j A)) (S := clu)
+    hraC8, hraTail8⟩ :=
+    (restrictCom_specW_suffix (B := B) (A := Impl.ofArena A (htabF j A)) (S := clu)
       (nmP := arenaNames j) (nmC := prepNmR j) (la := "cp.l") (ra := "cp.r")
       hNB hNNB hn0B hpaljB hhistjB hdisj8 hpair8
       (show lv "sv.n" (j + 1) ∉ rsScalars from
@@ -5069,12 +5313,12 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
     (hrP6.seq (hrP7.seq ((hrK.seq (hrL.seq (hrPp.seq (hrH.seq
       hrR8')))).seq ((hrb1.seq (hrb2.seq (hrb3.seq (hrb4.seq
         hrB9')))).seq hrT))))))))
-  have hrAll' : Run B (prepCom S ℓp hbf co cm j) σ0 σF _ := hrAll
-  refine ⟨σF, hrAll'.mono ?_, ⟨Dp, Dc, hPT, hAWF⟩, ?_, ?_,
-    fun b => run_arrs_length_eq hrAll' b⟩
+  have hrAll' : Run B (prepModeCom reset S ℓp hbf co cm j) σ0 σF _ := hrAll
+  refine ⟨σF, hrAll'.mono ?_, ⟨⟨Dp, Dc, hPT, hAWF⟩, ?_, ?_,
+    fun b => run_arrs_length_eq hrAll' b⟩, ?_⟩
   · -- the budget
-    show _ ≤ prepK S ord ℓp hbf j A ((u : Fin A.N) : ℕ)
-    rw [prepK_coe S ord ℓp hbf j A u]
+    show _ ≤ prepModeK reset S ord ℓp hbf j A ((u : Fin A.N) : ℕ)
+    rw [prepModeK_coe reset S ord ℓp hbf j A u]
     have e1 : childN S A ((ord A.N A.G).order) u = clu.ncard := rfl
     have e4 : kk = clu.ncard := hkclu
     have e5 : restrictK
@@ -5095,7 +5339,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       at hy
     refine hrAll'.frame_var y ?_
     intro hmem
-    rcases wvars_prepCom y hmem with h | h | h
+    rcases wvars_prepCom y (prepMode_wvars_subset hmem) with h | h | h
     · rcases hy with rfl | rfl | rfl
       · exact lv_not_mem (by decide) (by decide) j h
       · exact lv_not_mem (by decide) (by decide) j h
@@ -5115,7 +5359,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
     refine hrAll'.frame_arr a ?_
     intro hmem
     rcases ha with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl
-    · rcases warrs_prepCom _ hmem with h | h | h | h | h | h | ⟨i, h⟩
+    · rcases warrs_prepCom _ (prepMode_warrs_subset hmem) with h | h | h | h | h | h | ⟨i, h⟩
         | ⟨i, h⟩ | ⟨i, h⟩
       · exact (hcovP j).1.1 h
       · exact absurd (show ca j ∈ levelArrays (j + 1) by
@@ -5131,7 +5375,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       · exact ((hcovP j).2 i).1.1 h
       · exact ((hcovP j).2 i).1.2.1 h
       · exact ((hcovP j).2 i).1.2.2 h
-    · rcases warrs_prepCom _ hmem with h | h | h | h | h | h | ⟨i, h⟩
+    · rcases warrs_prepCom _ (prepMode_warrs_subset hmem) with h | h | h | h | h | h | ⟨i, h⟩
         | ⟨i, h⟩ | ⟨i, h⟩
       · exact (hcovP j).1.2.1 h
       · exact absurd (show co j ∈ levelArrays (j + 1) by
@@ -5147,7 +5391,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       · exact ((hcovP j).2 i).2.1.1 h
       · exact ((hcovP j).2 i).2.1.2.1 h
       · exact ((hcovP j).2 i).2.1.2.2 h
-    · rcases warrs_prepCom _ hmem with h | h | h | h | h | h | ⟨i, h⟩
+    · rcases warrs_prepCom _ (prepMode_warrs_subset hmem) with h | h | h | h | h | h | ⟨i, h⟩
         | ⟨i, h⟩ | ⟨i, h⟩
       · exact (hcovP j).1.2.2 h
       · exact absurd (show cm j ∈ levelArrays (j + 1) by
@@ -5163,7 +5407,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       · exact ((hcovP j).2 i).2.2.1 h
       · exact ((hcovP j).2 i).2.2.2.1 h
       · exact ((hcovP j).2 i).2.2.2.2 h
-    · rcases warrs_prepCom _ hmem with h | h | h | h | h | h | ⟨i, h⟩
+    · rcases warrs_prepCom _ (prepMode_warrs_subset hmem) with h | h | h | h | h | h | ⟨i, h⟩
         | ⟨i, h⟩ | ⟨i, h⟩
       · exact lv_not_mem (by decide) (by decide) j h
       · exact lv_ne_of_level_ne (by decide) (by omega) h
@@ -5174,7 +5418,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
-    · rcases warrs_prepCom _ hmem with h | h | h | h | h | h | ⟨i, h⟩
+    · rcases warrs_prepCom _ (prepMode_warrs_subset hmem) with h | h | h | h | h | h | ⟨i, h⟩
         | ⟨i, h⟩ | ⟨i, h⟩
       · exact lv_not_mem (by decide) (by decide) j h
       · exact lv_ne_of_level_ne (by decide) (by omega) h
@@ -5185,7 +5429,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
-    · rcases warrs_prepCom _ hmem with h | h | h | h | h | h | ⟨i, h⟩
+    · rcases warrs_prepCom _ (prepMode_warrs_subset hmem) with h | h | h | h | h | h | ⟨i, h⟩
         | ⟨i, h⟩ | ⟨i, h⟩
       · exact lv_not_mem (by decide) (by decide) j h
       · exact lv_ne_of_level_ne (by decide) (by omega) h
@@ -5196,7 +5440,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
-    · rcases warrs_prepCom _ hmem with h | h | h | h | h | h | ⟨i, h⟩
+    · rcases warrs_prepCom _ (prepMode_warrs_subset hmem) with h | h | h | h | h | h | ⟨i, h⟩
         | ⟨i, h⟩ | ⟨i, h⟩
       · exact lv_not_mem (by decide) (by decide) j h
       · exact lv_ne_of_level_ne (by decide) (by omega) h
@@ -5207,7 +5451,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
-    · rcases warrs_prepCom _ hmem with h | h | h | h | h | h | ⟨i, h⟩
+    · rcases warrs_prepCom _ (prepMode_warrs_subset hmem) with h | h | h | h | h | h | ⟨i, h⟩
         | ⟨i, h⟩ | ⟨i, h⟩
       · exact lv_not_mem (by decide) (by decide) j h
       · exact lv_ne_of_level_ne (by decide) (by omega) h
@@ -5218,7 +5462,7 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
-    · rcases warrs_prepCom _ hmem with h | h | h | h | h | h | ⟨i, h⟩
+    · rcases warrs_prepCom _ (prepMode_warrs_subset hmem) with h | h | h | h | h | h | ⟨i, h⟩
         | ⟨i, h⟩ | ⟨i, h⟩
       · exact lv_not_mem (by decide) (by decide) j h
       · exact lv_ne_of_level_ne (by decide) (by omega) h
@@ -5229,6 +5473,202 @@ theorem childLoadParts_of (B : ℕ) (S : Setup L)
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
       · exact lv_ne_of_base_ne (by decide) (by decide) j i h
+  · intro hclean0 p hp
+    have hrankT : σF.arrs "cp.r" = σ9.arrs "cp.r" := by
+      refine hrT.frame_arr "cp.r" ?_
+      simp only [Com.warrs, List.mem_append, not_or]
+      refine ⟨?_, ?_, ?_, ?_⟩
+      · simp only [prepSupportsCom, Com.warrs, warrs_supportsCom, prepNmR, arenaNames,
+          List.mem_append, List.mem_cons, List.not_mem_nil, or_false, false_or]
+        simpa using Ne.symm (lv_ne_lit (s := "sa.h") (t := "cp.r") (by decide) (by decide) (j + 1))
+      · intro hmem
+        rcases warrs_profilesCom_subset _ _ _ _ _ hmem with h | h | ⟨i, _, h⟩ | ⟨c, _, h⟩ | ⟨c, _, h⟩
+        · exact (by decide : ("cp.r" : String) ≠ "cp.x") h
+        · exact (by decide : ("cp.r" : String) ≠ "cp.v") h
+        · exact (lv_ne_lit (by decide) (by decide) i) h.symm
+        · exact (lv_ne_lit (by decide) (by decide) c) h.symm
+        · exact (lv_ne_lit (by decide) (by decide) c) h.symm
+      · intro hmem
+        simp only [prepColCom, Com.warrs, List.append_nil, List.nil_append] at hmem
+        exact (lv_ne_lit (by decide) (by decide) (j + 1)) (warrs_colRowCom _ hmem).symm
+      · simp only [prepIsolateCom, warrs_isolateCom, prepNmI, arenaNames,
+          List.mem_cons, List.not_mem_nil, or_false, not_or]
+        exact ⟨Ne.symm (lv_ne_lit (by decide) (by decide) (j + 1)),
+          Ne.symm (lv_ne_lit (by decide) (by decide) (j + 1)),
+          Ne.symm (lv_ne_lit (by decide) (by decide) (j + 1))⟩
+    rw [hrankT, hfaB "cp.r" (by decide), h9p_arrs]
+    by_cases hpN : p < A.N
+    · have h := congrArg (fun l : List ℕ => l.getD p 0) hraC8
+      change ((σ8.arrs "cp.r").take A.N).getD p 0 =
+        (arrOf A.N (fun _ => 0)).getD p 0 at h
+      rw [getD_take_of_lt hpN] at h
+      exact h.trans (by simp [arrOf, hpN])
+    · have h := congrArg (fun l : List ℕ => l.getD (p - A.N) 0) hraTail8
+      change ((σ8.arrs "cp.r").drop A.N).getD (p - A.N) 0 =
+        ((σ8p.arrs "cp.r").drop A.N).getD (p - A.N) 0 at h
+      simp only [List.getD_eq_getElem?_getD, List.getElem?_drop,
+        Nat.add_sub_of_le (by omega : A.N ≤ p)] at h
+      rw [← List.getD_eq_getElem?_getD, ← List.getD_eq_getElem?_getD] at h
+      rw [h, h8p_arrs, htail7 p (by omega), harr6 "cp.r" (by decide),
+        harr5 "cp.r" (by decide), harr4 "cp.r" (by decide), htail3 p (by omega),
+        htail2 p (by omega), hB_arrs]
+      exact hclean0 p hp
+
+/-- Compatibility theorem for callers using an uninitialised rank scratch. -/
+theorem childLoadParts_of (B : ℕ) (S : Setup L)
+    (ord : CoverSpec.OrderingRoutine) (ℓp : ℕ → ℕ)
+    (htabF : (j : ℕ) → (A : Arena (S.pal j) n₀) →
+      Fin A.N → Fin (ℓp j) → List (Fin A.N))
+    (hbf : ℕ → ℕ)
+    (Adm : (j : ℕ) → Arena (S.pal j) n₀ → Prop)
+    (Scr : ℕ → Env → Prop) (ca co cm : ℕ → String)
+    -- the constant-`ℓp` discipline (F7 owns both parameters)
+    (hlpEq : ∀ j, j + 1 ≤ S.depth → ℓp (j + 1) = ℓp j)
+    (hhbEq : ∀ j, j + 1 ≤ S.depth → hbf (j + 1) = hbf j)
+    (hlpRoom : ∀ j, j + 1 ≤ S.depth → j < ℓp j)
+    (hhbR : ∀ j, j + 1 ≤ S.depth → 2 * S.R + 1 ≤ hbf j)
+    -- the admissible history shape and the channel-pinning seam
+    (hAdmLen : ∀ j (A : Arena (S.pal j) n₀), Adm j A → A.hist.length = j)
+    (hpin : ∀ j (A : Arena (S.pal j) n₀), Adm j A →
+      ∀ (v : Fin A.N) (e : Fin (ℓp j)) (he : (e : ℕ) < A.hist.length)
+        (z : Fin A.N),
+        z ∈ htabF j A v e ↔ (A.up z) ∈ Lax3Proofs.SplitterWin.pathSet
+          (A.hist.reverse[(e : ℕ)]'(by simpa using he)).2 (2 * S.R)
+          (A.hist.reverse[(e : ℕ)]'(by simpa using he)).1 (A.up v))
+    (hpinE : ∀ j (A : Arena (S.pal j) n₀), Adm j A →
+      ∀ (v : Fin A.N) (e : Fin (ℓp j)), A.hist.length ≤ (e : ℕ) →
+        htabF j A v e = [])
+    -- the batch fits the width
+    (hwidth : ∀ j, j + 1 ≤ S.depth → 1 + j * (2 * S.R + 1) ≤ S.width)
+    -- word bounds
+    (h1B : 1 < B) (hn0B : n₀ < B) (hn0nB : n₀ * n₀ < B)
+    (hn02B : n₀ + 2 < B) (hbig1 : n₀ * n₀ + 2 * n₀ + 1 < B)
+    (hdepthB : S.depth < B) (hRB : 2 * S.R + 3 < B) (hwB : S.width < B)
+    (hlpB : ∀ j ≤ S.depth, ℓp j < B)
+    (hhbB : ∀ j ≤ S.depth, hbf j + 1 < B)
+    (hhistB : ∀ j ≤ S.depth, n₀ * ℓp j * (hbf j + 1) < B)
+    (hpalB : ∀ j ≤ S.depth, n₀ * S.pal j < B)
+    -- the scratch descriptor's length clauses
+    (hscrA : ∀ j' σ, Scr j' σ →
+      n₀ ≤ (σ.arrs "cp.l").length ∧ n₀ ≤ (σ.arrs "cp.r").length ∧
+      n₀ ≤ (σ.arrs "cp.b").length ∧ n₀ ≤ (σ.arrs "cp.d").length ∧
+      n₀ ≤ (σ.arrs "cp.p").length ∧ n₀ ≤ (σ.arrs "cp.x").length ∧
+      n₀ + 2 ≤ (σ.arrs "cp.v").length ∧
+      (σ.arrs "cp.w").length = S.width ∧
+      n₀ + 1 ≤ (σ.arrs "cp.o").length ∧
+      n₀ * n₀ ≤ (σ.arrs "cp.t").length ∧
+      n₀ * S.pal j' ≤ (σ.arrs "cp.c").length ∧
+      (∀ i, i < S.width → n₀ ≤ (σ.arrs (lv "cq.d" i)).length) ∧
+      (∀ c, c < S.pal j' →
+        n₀ * n₀ + 2 * n₀ ≤ (σ.arrs (lv "cq.v" c)).length) ∧
+      (∀ c, c < S.pal j' + 1 → n₀ + 1 ≤ (σ.arrs (lv "cq.u" c)).length))
+    (hscrLvl : ∀ j', j' + 1 ≤ S.depth → ∀ σ, Scr j' σ →
+      n₀ + 1 ≤ (σ.arrs (arenaNames (j' + 1)).off).length ∧
+      n₀ * n₀ ≤ (σ.arrs (arenaNames (j' + 1)).tgt).length ∧
+      n₀ * S.pal (j' + 1) ≤ (σ.arrs (arenaNames (j' + 1)).col).length ∧
+      n₀ ≤ (σ.arrs (arenaNames (j' + 1)).up).length ∧
+      n₀ * ℓp j' * (hbf j' + 1)
+        ≤ (σ.arrs (arenaNames (j' + 1)).hist).length)
+    -- cover-name freshness
+    (hcovA : ∀ jc j', ca jc ∉ levelArrays j' ∧ co jc ∉ levelArrays j' ∧
+      cm jc ∉ levelArrays j')
+    (hcovP : ∀ jc, (ca jc ∉ prepArrays ∧ co jc ∉ prepArrays ∧
+        cm jc ∉ prepArrays) ∧
+      ∀ i, (ca jc ≠ lv "cq.d" i ∧ ca jc ≠ lv "cq.v" i ∧
+          ca jc ≠ lv "cq.u" i) ∧
+        (co jc ≠ lv "cq.d" i ∧ co jc ≠ lv "cq.v" i ∧
+          co jc ≠ lv "cq.u" i) ∧
+        (cm jc ≠ lv "cq.d" i ∧ cm jc ≠ lv "cq.v" i ∧
+          cm jc ≠ lv "cq.u" i))
+ :
+    ChildLoadParts B S ord ℓp htabF hbf Adm Scr ca co cm
+      (prepCom S ℓp hbf co cm)
+      (prepChan S ord ℓp htabF)
+      (fun _ j A u => prepK S ord ℓp hbf j A u) := by
+  have h := childLoadParts_mode true B S ord ℓp htabF hbf Adm Scr ca co cm
+    hlpEq hhbEq hlpRoom hhbR hAdmLen hpin hpinE hwidth h1B hn0B hn0nB
+    hn02B hbig1 hdepthB hRB hwB hlpB hhbB hhistB hpalB hscrA hscrLvl hcovA hcovP
+  intro k j A hdiag hAdm hbot u σ hσ
+  obtain ⟨σ', hr, hQ, _⟩ := h k j A hdiag hAdm hbot u σ ⟨hσ, by simp⟩
+  exact ⟨σ', hr, hQ⟩
+
+/-- The child pass consumes and returns root-prefix cleanliness. -/
+theorem childLoadPartsClean_of (B : ℕ) (S : Setup L)
+    (ord : CoverSpec.OrderingRoutine) (ℓp : ℕ → ℕ)
+    (htabF : (j : ℕ) → (A : Arena (S.pal j) n₀) →
+      Fin A.N → Fin (ℓp j) → List (Fin A.N))
+    (hbf : ℕ → ℕ)
+    (Adm : (j : ℕ) → Arena (S.pal j) n₀ → Prop)
+    (Scr : ℕ → Env → Prop) (ca co cm : ℕ → String)
+    -- the constant-`ℓp` discipline (F7 owns both parameters)
+    (hlpEq : ∀ j, j + 1 ≤ S.depth → ℓp (j + 1) = ℓp j)
+    (hhbEq : ∀ j, j + 1 ≤ S.depth → hbf (j + 1) = hbf j)
+    (hlpRoom : ∀ j, j + 1 ≤ S.depth → j < ℓp j)
+    (hhbR : ∀ j, j + 1 ≤ S.depth → 2 * S.R + 1 ≤ hbf j)
+    -- the admissible history shape and the channel-pinning seam
+    (hAdmLen : ∀ j (A : Arena (S.pal j) n₀), Adm j A → A.hist.length = j)
+    (hpin : ∀ j (A : Arena (S.pal j) n₀), Adm j A →
+      ∀ (v : Fin A.N) (e : Fin (ℓp j)) (he : (e : ℕ) < A.hist.length)
+        (z : Fin A.N),
+        z ∈ htabF j A v e ↔ (A.up z) ∈ Lax3Proofs.SplitterWin.pathSet
+          (A.hist.reverse[(e : ℕ)]'(by simpa using he)).2 (2 * S.R)
+          (A.hist.reverse[(e : ℕ)]'(by simpa using he)).1 (A.up v))
+    (hpinE : ∀ j (A : Arena (S.pal j) n₀), Adm j A →
+      ∀ (v : Fin A.N) (e : Fin (ℓp j)), A.hist.length ≤ (e : ℕ) →
+        htabF j A v e = [])
+    -- the batch fits the width
+    (hwidth : ∀ j, j + 1 ≤ S.depth → 1 + j * (2 * S.R + 1) ≤ S.width)
+    -- word bounds
+    (h1B : 1 < B) (hn0B : n₀ < B) (hn0nB : n₀ * n₀ < B)
+    (hn02B : n₀ + 2 < B) (hbig1 : n₀ * n₀ + 2 * n₀ + 1 < B)
+    (hdepthB : S.depth < B) (hRB : 2 * S.R + 3 < B) (hwB : S.width < B)
+    (hlpB : ∀ j ≤ S.depth, ℓp j < B)
+    (hhbB : ∀ j ≤ S.depth, hbf j + 1 < B)
+    (hhistB : ∀ j ≤ S.depth, n₀ * ℓp j * (hbf j + 1) < B)
+    (hpalB : ∀ j ≤ S.depth, n₀ * S.pal j < B)
+    -- the scratch descriptor's length clauses
+    (hscrA : ∀ j' σ, Scr j' σ →
+      n₀ ≤ (σ.arrs "cp.l").length ∧ n₀ ≤ (σ.arrs "cp.r").length ∧
+      n₀ ≤ (σ.arrs "cp.b").length ∧ n₀ ≤ (σ.arrs "cp.d").length ∧
+      n₀ ≤ (σ.arrs "cp.p").length ∧ n₀ ≤ (σ.arrs "cp.x").length ∧
+      n₀ + 2 ≤ (σ.arrs "cp.v").length ∧
+      (σ.arrs "cp.w").length = S.width ∧
+      n₀ + 1 ≤ (σ.arrs "cp.o").length ∧
+      n₀ * n₀ ≤ (σ.arrs "cp.t").length ∧
+      n₀ * S.pal j' ≤ (σ.arrs "cp.c").length ∧
+      (∀ i, i < S.width → n₀ ≤ (σ.arrs (lv "cq.d" i)).length) ∧
+      (∀ c, c < S.pal j' →
+        n₀ * n₀ + 2 * n₀ ≤ (σ.arrs (lv "cq.v" c)).length) ∧
+      (∀ c, c < S.pal j' + 1 → n₀ + 1 ≤ (σ.arrs (lv "cq.u" c)).length))
+    (hscrLvl : ∀ j', j' + 1 ≤ S.depth → ∀ σ, Scr j' σ →
+      n₀ + 1 ≤ (σ.arrs (arenaNames (j' + 1)).off).length ∧
+      n₀ * n₀ ≤ (σ.arrs (arenaNames (j' + 1)).tgt).length ∧
+      n₀ * S.pal (j' + 1) ≤ (σ.arrs (arenaNames (j' + 1)).col).length ∧
+      n₀ ≤ (σ.arrs (arenaNames (j' + 1)).up).length ∧
+      n₀ * ℓp j' * (hbf j' + 1)
+        ≤ (σ.arrs (arenaNames (j' + 1)).hist).length)
+    -- cover-name freshness
+    (hcovA : ∀ jc j', ca jc ∉ levelArrays j' ∧ co jc ∉ levelArrays j' ∧
+      cm jc ∉ levelArrays j')
+    (hcovP : ∀ jc, (ca jc ∉ prepArrays ∧ co jc ∉ prepArrays ∧
+        cm jc ∉ prepArrays) ∧
+      ∀ i, (ca jc ≠ lv "cq.d" i ∧ ca jc ≠ lv "cq.v" i ∧
+          ca jc ≠ lv "cq.u" i) ∧
+        (co jc ≠ lv "cq.d" i ∧ co jc ≠ lv "cq.v" i ∧
+          co jc ≠ lv "cq.u" i) ∧
+        (cm jc ≠ lv "cq.d" i ∧ cm jc ≠ lv "cq.v" i ∧
+          cm jc ≠ lv "cq.u" i))
+ :
+    ChildLoadPartsClean B S ord ℓp htabF hbf Adm Scr ca co cm
+      (prepCleanCom S ℓp hbf co cm)
+      (prepChan S ord ℓp htabF)
+      (fun _ j A u => prepCleanK S ord ℓp hbf j A u) := by
+  have h := childLoadParts_mode false B S ord ℓp htabF hbf Adm Scr ca co cm
+    hlpEq hhbEq hlpRoom hhbR hAdmLen hpin hpinE hwidth h1B hn0B hn0nB
+    hn02B hbig1 hdepthB hRB hwB hlpB hhbB hhistB hpalB hscrA hscrLvl hcovA hcovP
+  intro k j A hdiag hAdm hbot u σ ⟨hσ, hclean⟩
+  obtain ⟨σ', hr, hQ, hclean'⟩ := h k j A hdiag hAdm hbot u σ ⟨hσ, fun _ => hclean.1⟩
+  exact ⟨σ', hr, hQ, hclean' hclean.1, Run.arrWords hr hclean.2⟩
 
 /-! ## §8 The headline and the admissible channel seam -/
 open Classical in
