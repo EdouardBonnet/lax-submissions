@@ -59,6 +59,16 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-06 — concrete recursive solve pipeline landed
+
+Reviewed the eleven `SolveConcrete*` files from `57e3019`/`29a001a` and
+exported the whole pipeline. Schedule-only word bounds, actual initialized
+lengths, finite write ownership, clean PREP/readback, bottom branches, root
+loading and top evaluation are instantiated. The frame budget charges eight
+loop steps per centre, with the edgeless branch accounted separately. Full
+archive build and axiom checks pass at the existing UQW baseline. The final
+assembly now supplies the concrete cover, its reservations and scalar bounds.
+
 ### 2026-09-06 — concrete clean whole cover landed
 
 Reviewed `c7de05f` and exported the complete `CoverClean.coverAllClean_machine`.
