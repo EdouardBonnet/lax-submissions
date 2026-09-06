@@ -59,6 +59,16 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-06 — concrete clean whole cover landed
+
+Reviewed `c7de05f` and exported the complete `CoverClean.coverAllClean_machine`.
+The actual AUG computes the `3*S.R` chain; its final heap computes the order,
+the original graph is rebuilt, and the radius-`S.R` peeling sweep emits exact
+centres and cluster rows. No semantic machine callback or incoming rank is
+assumed. Finite reservations, earlier-frame preservation, clean rank reuse and
+bounded array words are proved. Full archive build, exact cost equality to
+`actualCoverCost`, and axiom checks pass with the three logical axioms.
+
 ### 2026-09-06 — complete actual cover cost bound landed
 
 Reviewed `75d30c4` and landed through `ab4c60b`. `SolveAugCharge` bounds the
