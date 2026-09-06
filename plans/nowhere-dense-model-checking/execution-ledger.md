@@ -59,6 +59,16 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-06 — complete actual cover cost bound landed
+
+Reviewed `75d30c4` and landed through `ab4c60b`. `SolveAugCharge` bounds the
+real AUG, final heap, original-graph rebuild and peeling sweep together.
+`exists_actualCoverCost_le` supplies uniform weak-reachability and time
+constants for the same `3r` augmentation/radius-`r` machine; every heap
+logarithm is retained. Empty arenas take the bottom branch and their unused
+cover charge is zero, while the scalar budget still pays constant work.
+Full archive build and axiom checks pass with the three logical axioms.
+
 ### 2026-09-06 — uniform compilation and linear boundary costs landed
 
 `1a521eb` adds `SolveUniformMachine`. The complete parsing, materialization,
