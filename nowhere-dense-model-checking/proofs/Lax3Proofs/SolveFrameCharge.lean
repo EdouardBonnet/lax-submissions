@@ -15,6 +15,34 @@ open Lax62Proofs.Refine Lax3.ColoredGraphs Lax3Proofs.Driver
 open Lax12.GraphClasses Lax12.ColoringNumbers Lax3Proofs.CoverEdgeSum
 variable {L n₀ : ℕ}
 
+/-- The concrete cover cost is charged on nonempty arenas. Empty arenas take
+the bottom branch, whose actual constant work is paid by `chargeFrameK`. -/
+def machineCoverCharge (N K : ℕ) : ACost String ℕ :=
+  if N = 0 then 0 else ACost.cost "cover.order" K
+
+theorem chargeTotal_machineCoverCharge_of_pos {N : ℕ} (hN : 0 < N) (K : ℕ) :
+    chargeTotal (machineCoverCharge N K) = K := by
+  rw [machineCoverCharge, if_neg (by omega)]
+  exact chargeTotal_cost (by decide) K
+
+theorem machineCoverCharge_covers {Λ : ℕ} (A : Arena Λ n₀) (K : ℕ)
+    (hbot : A.G ≠ ⊥) : K ≤ chargeTotal (machineCoverCharge A.N K) := by
+  have hN : 0 < A.N := by
+    by_contra h
+    exact hbot (arena_bot_of_N_eq_zero A (by omega))
+  rw [chargeTotal_machineCoverCharge_of_pos hN]
+
+/-- A bound for the actual invoked cover extends to every arena in the
+recursive charge theorem, including the unused empty-arena cover slot. -/
+theorem machineCoverCharge_le {N K : ℕ} {f δ : ℝ} (hf : 0 ≤ f)
+    (hK : 0 < N → (K : ℝ) ≤ f * (N : ℝ) ^ (1 + 2 * δ)) :
+    (chargeTotal (machineCoverCharge N K) : ℝ) ≤ f * (N : ℝ) ^ (1 + 2 * δ) := by
+  by_cases hN : N = 0
+  · simp only [machineCoverCharge, if_pos hN, chargeTotal_zero, Nat.cast_zero]
+    exact mul_nonneg hf (Real.rpow_nonneg (Nat.cast_nonneg N) _)
+  · rw [chargeTotal_machineCoverCharge_of_pos (by omega)]
+    exact hK (by omega)
+
 /-- A scalar budget with one fixed multiplier per remaining recursion level. -/
 noncomputable def chargeFrameK (S : Setup L) (ord : CoverSpec.OrderingRoutine)
     (ℓp : ℕ → ℕ)
