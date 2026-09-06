@@ -64,6 +64,27 @@ Status values: `ready` (dependencies met, may be dispatched) · `waiting`
 
 ## Campaign log
 
+### 2026-09-06 — connected proof network
+
+Reviewed and landed `06ab970` and `df7b55d`. The normal-form proof and
+`LocalityFun` now consume the proved locality interface. The shared
+arbitrary-order cover construction has its own claim in
+`Lax3.OrderedNeighborhoodCover`, discharged in `CoverConstruction` and
+consumed by both the existential cover theorem and the algorithm. Its
+separate concept avoids the renderer's false cycle when a proof connects
+two statements grouped into the same concept box. All five existing claim
+signatures are unchanged; the chosen locality decomposition is definitionally
+equal to the previous choice from the Assembly proof.
+
+The headline's current interface dependencies are locality, the arbitrary-order
+cover claim, and Lax12 UQW. The first two discharges use only the three logical
+axioms; the existing Lax12/Lax14 proof chain closes the third. All six own
+claims are grounded. Full `lax build` passes on the worker and replays on
+`main` in 11 seconds. Independent Lean and served-page audits pass: 13
+statement/proof nodes, 12 edges, one connected component, and no cycles before
+or after concept grouping. The browser renders all 12 edges without cycle
+markers. The local preview is refreshed.
+
 ### 2026-09-06 — exact endorsed word-RAM theorem completed
 
 `639e736` proves
