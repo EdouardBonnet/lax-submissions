@@ -7,5 +7,6 @@ import Lax3.NormalForm
 import Lax3.SplitterGame
 import Lax3.NowhereDenseSplitter
 import Lax3.NeighborhoodCovers
+import Lax3.OrderedNeighborhoodCover
 import Lax3.NeighborhoodCoverBound
 import Lax3.ModelChecking

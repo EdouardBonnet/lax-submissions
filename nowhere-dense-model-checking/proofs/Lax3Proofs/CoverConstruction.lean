@@ -19,7 +19,7 @@ clusters containing a fixed `v` are indexed by exactly the vertices weakly
 `u` by going back to `v` and out again — a walk of length at most `2r`
 whose support stays inside the ball, where `u` is minimal by choice.
 
-This proves `Lax3.NeighborhoodCoverBound.isNeighborhoodCover_wreach`,
+This proves `Lax3.OrderedNeighborhoodCover.isNeighborhoodCover_wreach`,
 the core used for the algorithm's computed ordering. The existential
 cover theorem chooses an ordering attaining `wcol G (2r)` and applies
 that concept claim with `k = wcol G (2r)`.
@@ -70,7 +70,7 @@ private theorem withinDist_of_mem_support {V : Type*} {G : SimpleGraph V} {a b :
 
 /--
 ---
-conclusion: Lax3.NeighborhoodCoverBound.isNeighborhoodCover_wreach
+conclusion: Lax3.OrderedNeighborhoodCover.isNeighborhoodCover_wreach
 ---
 **The cover of an ordering** (Lemma 6.9 of Grohe–Kreutzer–Siebertz,
 the parametric core of their Theorem 6.2). For any ordering `π` whose
@@ -137,7 +137,7 @@ most its weak `2r`-coloring number.
 
 Choose an ordering attaining `wcol G (2r)`: the defining infimum is over
 a nonempty set of natural-number bounds, so it is attained. Apply
-`Lax3.NeighborhoodCoverBound.isNeighborhoodCover_wreach` to that
+`Lax3.OrderedNeighborhoodCover.isNeighborhoodCover_wreach` to that
 ordering and its bound. The arbitrary-order construction is discharged
 by `isNeighborhoodCover_wreach` above.
 -/
@@ -146,6 +146,6 @@ theorem exists_neighborhoodCover_degree_wcol {n : ℕ}
     ∃ X : Fin n → Set (Fin n),
       IsNeighborhoodCover G r X (wcol G (2 * r)) := by
   obtain ⟨π, hπ⟩ := exists_ordering_wreach_le_wcol G (2 * r)
-  exact ⟨_, Lax3.NeighborhoodCoverBound.isNeighborhoodCover_wreach G r (wcol G (2 * r)) π hπ⟩
+  exact ⟨_, Lax3.OrderedNeighborhoodCover.isNeighborhoodCover_wreach G r (wcol G (2 * r)) π hπ⟩
 
 end Lax3Proofs.CoverConstruction

@@ -1,4 +1,4 @@
-import Lax3.NeighborhoodCoverBound
+import Lax3.OrderedNeighborhoodCover
 import Lax3Proofs.Augmentation
 
 /-!
@@ -8,7 +8,7 @@ optimal ordering.
 
 # The cover of an arbitrary ordering
 
-The claim `Lax3.NeighborhoodCoverBound.isNeighborhoodCover_wreach`
+The claim `Lax3.OrderedNeighborhoodCover.isNeighborhoodCover_wreach`
 supplies the cover of any ordering, with its full proof in
 `CoverConstruction`. The existential cover theorem applies it to an
 ordering attaining the weak coloring number; this module applies it
@@ -89,12 +89,12 @@ weak `2r`-reachability sets have at most `k` elements, the fibers of weak
 `2r`-reachability form an `r`-neighborhood cover of radius `2r` and
 degree `k`.
 
-This consumes `Lax3.NeighborhoodCoverBound.isNeighborhoodCover_wreach`;
+This consumes `Lax3.OrderedNeighborhoodCover.isNeighborhoodCover_wreach`;
 the full construction is proved in `Lax3Proofs.CoverConstruction`. -/
 theorem isNeighborhoodCover_wreach (G : SimpleGraph (Fin n)) (r k : ℕ)
     (π : Equiv.Perm (Fin n)) (hk : ∀ v, (wreach G π (2 * r) v).ncard ≤ k) :
     IsNeighborhoodCover G r (fun u => {w | u ∈ wreach G π (2 * r) w}) k :=
-  Lax3.NeighborhoodCoverBound.isNeighborhoodCover_wreach G r k π hk
+  Lax3.OrderedNeighborhoodCover.isNeighborhoodCover_wreach G r k π hk
 
 /-! ### Arrows and meets -/
 
