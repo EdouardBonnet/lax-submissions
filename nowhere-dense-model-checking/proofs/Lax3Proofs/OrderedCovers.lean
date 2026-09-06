@@ -1,3 +1,4 @@
+import Lax3.NeighborhoodCoverBound
 import Lax3Proofs.Augmentation
 
 /-!
@@ -7,15 +8,16 @@ optimal ordering.
 
 # The cover of an arbitrary ordering
 
-`CoverConstruction.exists_neighborhoodCover_degree_wcol` builds its
-cover from an ordering attaining the weak coloring number.  Optimality
-enters that proof only in the degree field: the covering and radius
-conditions hold for *every* ordering.  `isNeighborhoodCover_wreach` is
-that parametric core — given any ordering `π` whose weak
+The claim `Lax3.NeighborhoodCoverBound.isNeighborhoodCover_wreach`
+supplies the cover of any ordering, with its full proof in
+`CoverConstruction`. The existential cover theorem applies it to an
+ordering attaining the weak coloring number; this module applies it
+to the ordering the program computes. Given any ordering `π` whose weak
 `2r`-reachability sets have at most `k` elements, the fibers
 `X u = {w | u ∈ wreach G π (2r) w}` form an `r`-neighborhood cover of
-radius `2r` and degree `k`.  The program instantiates it with the
-ordering it computes.
+radius `2r` and degree `k`. The local `isNeighborhoodCover_wreach`
+forwards to that concept claim, so the algorithm and the existential
+cover theorem share the same proved construction.
 
 # The ordering of an augmentation chain
 
@@ -81,55 +83,18 @@ variable {n : ℕ}
 
 /-! ### The cover of an arbitrary ordering -/
 
-/-- Every vertex on a walk of length at most `r` is within distance `r`
-of both endpoints: cutting the walk at that vertex splits its length. -/
-private theorem withinDist_of_mem_support {V : Type*} {G : SimpleGraph V} {a b : V}
-    {r : ℕ} (p : G.Walk a b) (hp : p.length ≤ r) {y : V} (hy : y ∈ p.support) :
-    WithinDist G r a y ∧ WithinDist G r y b := by
-  classical
-  have hlen := congrArg SimpleGraph.Walk.length (p.take_spec hy)
-  rw [SimpleGraph.Walk.length_append] at hlen
-  exact ⟨⟨p.takeUntil y hy, by omega⟩, ⟨p.dropUntil y hy, by omega⟩⟩
-
 /-- **The cover of an ordering** (Lemma 6.9 of Grohe–Kreutzer–Siebertz,
 the parametric core of their Theorem 6.2).  For *any* ordering `π` whose
 weak `2r`-reachability sets have at most `k` elements, the fibers of weak
 `2r`-reachability form an `r`-neighborhood cover of radius `2r` and
 degree `k`.
 
-# Proof strategy
-
-The degree bound is the hypothesis read backwards: the clusters
-containing `v` are indexed by `wreach G π (2r) v` itself.  The radius
-bound drops the minimality clause from a reachability walk.  Covering is
-the only argument: given `v`, let `u` be a `π`-minimal vertex of the
-`r`-ball of `v`; every `w` in that ball reaches `u` by going back to `v`
-and out again, a walk of length at most `2r` whose support stays inside
-the ball — cutting a walk of length at most `r` at any of its vertices
-puts that vertex within distance `r` of both endpoints — where `u` is
-`π`-minimal by choice. -/
+This consumes `Lax3.NeighborhoodCoverBound.isNeighborhoodCover_wreach`;
+the full construction is proved in `Lax3Proofs.CoverConstruction`. -/
 theorem isNeighborhoodCover_wreach (G : SimpleGraph (Fin n)) (r k : ℕ)
     (π : Equiv.Perm (Fin n)) (hk : ∀ v, (wreach G π (2 * r) v).ncard ≤ k) :
-    IsNeighborhoodCover G r (fun u => {w | u ∈ wreach G π (2 * r) w}) k := by
-  classical
-  refine ⟨fun v => ?_, fun u w hw => ?_, hk⟩
-  · obtain ⟨u, huF, hmin⟩ :=
-      Finset.exists_min_image (Set.toFinite (ball G r v)).toFinset (fun x => π x)
-        ⟨v, (Set.Finite.mem_toFinset _).mpr (mem_ball_self G r v)⟩
-    have hu : u ∈ ball G r v := (Set.Finite.mem_toFinset _).mp huF
-    refine ⟨u, fun w hw => ?_⟩
-    obtain ⟨p, hp⟩ := mem_ball.mp hw
-    obtain ⟨q, hq⟩ := mem_ball.mp hu
-    have hpr : p.reverse.length ≤ r := by
-      rw [SimpleGraph.Walk.length_reverse]; exact hp
-    refine mem_wreach_iff.mpr ⟨p.reverse.append q, ?_, fun y hy => ?_⟩
-    · rw [SimpleGraph.Walk.length_append]; omega
-    · refine hmin y ((Set.Finite.mem_toFinset _).mpr ?_)
-      rcases (SimpleGraph.Walk.mem_support_append_iff _ _).mp hy with hy | hy
-      · exact mem_ball.mpr (withinDist_symm (withinDist_of_mem_support p.reverse hpr hy).2)
-      · exact mem_ball.mpr (withinDist_of_mem_support q hq hy).1
-  · obtain ⟨p, hp, -⟩ := mem_wreach_iff.mp hw
-    exact mem_ball.mpr (withinDist_symm ⟨p, hp⟩)
+    IsNeighborhoodCover G r (fun u => {w | u ∈ wreach G π (2 * r) w}) k :=
+  Lax3.NeighborhoodCoverBound.isNeighborhoodCover_wreach G r k π hk
 
 /-! ### Arrows and meets -/
 

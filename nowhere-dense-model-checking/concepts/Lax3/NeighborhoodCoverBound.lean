@@ -8,7 +8,9 @@ type: theorem
 ---
 Every graph has, for every radius *r*, an *r*-neighborhood cover of
 radius 2*r* whose degree is at most the weak 2*r*-coloring number of
-the graph.
+the graph. More generally, any vertex ordering whose weak
+2*r*-reachability sets have size at most *k* gives such a cover of
+degree at most *k*.
 
 This is Theorem 6.2 of Grohe–Kreutzer–Siebertz (via their Lemma 6.9):
 from a vertex ordering witnessing the weak coloring number, take as
@@ -21,30 +23,40 @@ subgraphs of members.
 
 # Formalization notes
 
-The statement is per-graph and class-free, with the degree bound
-`wcol G (2r)` — Lax12's `wcol`, not restated. This is the strongest
-form the construction gives: the covering and radius properties hold
-for the clusters of an arbitrary ordering, and only the degree needs
-the ordering to be a good one, so the theorem composes with any wcol
-bound a consumer owns, not only the nowhere dense one. The n^ε class
-form is a corollary consumers derive by picking the ordering from
-`hasSubpolynomialWcol_of_nowhereDense`; it is deliberately not a
-second axiom.
+Both statements are per-graph and class-free. The arbitrary-order
+form `isNeighborhoodCover_wreach` names the clusters explicitly and
+accepts the supplied ordering's weak reachability bound. This is the
+form the model-checking algorithm consumes for its computed ordering.
+The existential form `exists_neighborhoodCover_degree_wcol` chooses
+an optimal ordering and applies that core with the degree bound
+`wcol G (2r)` — Lax12's `wcol`, not restated. It therefore composes
+with any wcol bound a consumer owns, including the subpolynomial
+bound for nowhere dense classes.
 
-The discharge constructs the cluster of `u` as
-`{w | u ∈ wreach G π (2r) w}` for an optimal ordering `π` and reads
-the degree bound off `(wreach G π (2r) v).ncard ≤ wcol G (2r)`
-directly; covering and radius are elementary walk arguments. The
+The arbitrary-order discharge constructs the cluster of `u` as
+`{w | u ∈ wreach G π (2r) w}` and reads the degree bound off the
+hypothesis `(wreach G π (2r) v).ncard ≤ k` directly; covering and
+radius are elementary walk arguments. The existential discharge uses
+this claim after showing that an optimal ordering exists. The
 *computation* of such a cover on the word RAM — including computing a
-good-enough ordering — is the algorithmic content of a later phase
-(the augmentation-density work of the campaign plan) and is not part
-of this statement.
+good-enough ordering — is proved in the algorithmic layer and is not
+part of these two claims.
 -/
 
 namespace Lax3.NeighborhoodCoverBound
 
 open Lax3.NeighborhoodCovers
 open Lax12.ColoringNumbers
+
+/-- The fibers of weak `2r`-reachability under any ordering `π` form
+an `r`-neighborhood cover of radius `2r` and degree at most `k`,
+provided every weak `2r`-reachability set has size at most `k`.
+This is the arbitrary-order construction of Lemma 6.9 of
+Grohe–Kreutzer–Siebertz, used both by the algorithm with its computed
+ordering and by the existential cover theorem with an optimal one. -/
+axiom isNeighborhoodCover_wreach {n : ℕ} (G : SimpleGraph (Fin n)) (r k : ℕ)
+    (π : Equiv.Perm (Fin n)) (hk : ∀ v, (wreach G π (2 * r) v).ncard ≤ k) :
+    IsNeighborhoodCover G r (fun u => {w | u ∈ wreach G π (2 * r) w}) k
 
 /-- Every graph has an `r`-neighborhood cover of radius `2r` and
 degree at most its weak `2r`-coloring number. -/

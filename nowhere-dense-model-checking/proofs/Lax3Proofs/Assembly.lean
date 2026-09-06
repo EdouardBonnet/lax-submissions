@@ -46,7 +46,8 @@ imported machinery enters.
   `exU_pos_step` and `exU_far_step`.
 
 The normal form is the locality theorem at the maximum-size scatter
-choice with the scatter sentences written out in the logic:
+choice, consumed through `Lax3.Locality.locality`, with the scatter
+sentences written out in the logic:
 `ScatterFml.sat_scatterFml` replaces each scatter atom, `BCAlgebra.eval_congr`
 carries the replacement through the combination, and the five bridges of
 `Lax3Proofs.ScatterFml` turn the scatter rank the theorem produces into
@@ -607,8 +608,9 @@ at distance larger than `r`, all satisfying `β`".
 
 # Proof strategy
 
-The locality theorem at the maximum-size scatter choice, with the same
-boolean combination. With that choice a scatter sentence is definable in
+The claim `Lax3.Locality.locality` at the maximum-size scatter choice,
+with the same boolean combination. Its discharge is `locality` above.
+With that choice a scatter sentence is definable in
 the logic — `Lax3Proofs.ScatterFml.sat_scatterFml` — so replacing each
 scatter atom's evaluation by satisfaction of `scatterFml` changes no
 truth value, and `Lax3Proofs.BCAlgebra.eval_congr` carries the
@@ -628,7 +630,7 @@ theorem normalForm {k q : ℕ} (hq : 1 ≤ q) (φ : DistFO L k) (hφ : DRank k q
         Sat G col m φ ↔
           b.eval (Sum.elim (Sat G col m)
             (fun σ => Sat G col Fin.elim0 (scatterFml σ.r σ.t σ.β))) := by
-  obtain ⟨b, hbl, hbs, hbeq⟩ := locality maxChoice φ hφ
+  obtain ⟨b, hbl, hbs, hbeq⟩ := Lax3.Locality.locality maxChoice φ hφ
   refine ⟨b, hbl, fun σ hσ => ⟨t_le_of_drank (hbs σ hσ), isLocal_beta_of_drank (hbs σ hσ),
     drank_succ_pred_of_drank (hbs σ hσ) hq, r_le_rhoMinus_of_drank (hbs σ hσ),
     semanticallyLocal_div_four_of_drank (hbs σ hσ)⟩, fun n G col m => ?_⟩

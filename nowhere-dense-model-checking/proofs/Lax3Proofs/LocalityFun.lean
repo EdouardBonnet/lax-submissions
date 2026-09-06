@@ -1,9 +1,9 @@
-import Lax3Proofs.Assembly
+import Lax3.Locality
 import Lax3Proofs.BCAlgebra
 
 /-!
 The locality decomposition as a *function*. The endorsed theorem
-`Lax3.Locality.locality` is an existential (consumed here through its proofs-side discharge `Lax3Proofs.Assembly.locality`, so the axiom stays out of the footprint): every formula of distance
+`Lax3.Locality.locality` is an existential: every formula of distance
 rank `(k, q)` *has* an equivalent boolean combination of local formulas
 and scatter sentences. A consumer that `Classical.choose`s it ad hoc gets
 no guarantee that two use sites at the same `(choice, φ)` pick the same
@@ -11,15 +11,17 @@ combination — but the formula schedule of the algorithm (algorithm-v2
 §8 step 3, §9 O2, D5) must depend only on `(φ, ε, C)`, never on the
 input graph, so the decomposition has to be one fixed function.
 
-This file makes that choice once. `localityBC` is the chosen
-decomposition; the three spec lemmas split the axiom's conjunction so a
-consumer takes exactly the clause it needs; `localityBC_irrel` records
+This file consumes that claim through its concept interface; its proof
+is `Lax3Proofs.Assembly.locality`. It makes the choice once.
+`localityBC` is the chosen decomposition; the three spec lemmas split
+the claim's conjunction so a consumer takes exactly the clause it needs;
+`localityBC_irrel` records
 that the rank witness does not enter the choice (definitional, by proof
 irrelevance), so every use site at the same `(choice, φ)` sees the same
 combination. `localAtoms` and `scatterAtoms` read the combination's atom
 list apart into the two kinds — the data the schedule construction
 iterates over — with membership lemmas returning each to `BC.atoms` and
-with the axiom's side conditions restated over the lists.
+with the claim's side conditions restated over the lists.
 
 Nothing here is computable and nothing needs to be: what the choice
 buys is a function, not decidability.
@@ -37,7 +39,7 @@ asserts to exist, fixed as a function of `(choice, φ)` (and the ranks).
 The rank witness `hφ` does not enter the choice: see `localityBC_irrel`. -/
 noncomputable def localityBC (choice : ScatterChoice) {k q : ℕ} (φ : DistFO L k)
     (hφ : DistFO.DRank k q φ) : BC (DistFO L k ⊕ ScatterSentence L) :=
-  (Lax3Proofs.Assembly.locality choice φ hφ).choose
+  (Lax3.Locality.locality choice φ hφ).choose
 
 /-- The formula atoms of the chosen decomposition are local and of
 distance rank `(k, q)`. -/
@@ -45,14 +47,14 @@ theorem localityBC_atoms_local (choice : ScatterChoice) {k q : ℕ} (φ : DistFO
     (hφ : DistFO.DRank k q φ) :
     ∀ ψ : DistFO L k, Sum.inl ψ ∈ (localityBC choice φ hφ).atoms →
       DistFO.IsLocal ψ ∧ DistFO.DRank k q ψ :=
-  (Lax3Proofs.Assembly.locality choice φ hφ).choose_spec.1
+  (Lax3.Locality.locality choice φ hφ).choose_spec.1
 
 /-- The scatter-sentence atoms of the chosen decomposition have distance
 rank `(k, q)`. -/
 theorem localityBC_atoms_scatter (choice : ScatterChoice) {k q : ℕ} (φ : DistFO L k)
     (hφ : DistFO.DRank k q φ) :
     ∀ σ : ScatterSentence L, Sum.inr σ ∈ (localityBC choice φ hφ).atoms → σ.DRank k q :=
-  (Lax3Proofs.Assembly.locality choice φ hφ).choose_spec.2.1
+  (Lax3.Locality.locality choice φ hφ).choose_spec.2.1
 
 /-- The chosen decomposition is equivalent to the formula in every finite
 colored graph under every environment. -/
@@ -62,7 +64,7 @@ theorem localityBC_eval (choice : ScatterChoice) {k q : ℕ} (φ : DistFO L k)
       DistFO.Sat G col m φ ↔
         (localityBC choice φ hφ).eval
           (Sum.elim (DistFO.Sat G col m) (ScatterSentence.Sat choice G col)) :=
-  (Lax3Proofs.Assembly.locality choice φ hφ).choose_spec.2.2
+  (Lax3.Locality.locality choice φ hφ).choose_spec.2.2
 
 /-- **The semantic gate.** The chosen decomposition does not depend on
 the rank witness: two use sites at the same `(choice, φ)` see the same

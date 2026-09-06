@@ -36,24 +36,24 @@ equivalence could not express it. Atoms are the sum type of formulas
 and scatter sentences, so one boolean combination mixes the two kinds
 and `Sum.elim` supplies their two evaluations.
 
-Effectiveness is deliberately absent. The source says the boolean
-combination "can be effectively computed"; the statement here asserts
-only that it exists. Nothing is lost: the rewriting is discharged by an
-explicit Lean function on syntax with a soundness lemma, and it is that
-function — not the existential — that the model-checking algorithm of
-this submission consumes, together with the fact that a Lean function
-on an inductive syntax is by construction an algorithm. Stating
-effectiveness in the existential form ("there is a computable map …")
-would add a machine model to a statement about logic, and the machine
-model this submission uses is the word RAM of submission Lax67, which
-enters at the headline theorem and not before.
+Effectiveness is not part of this claim: it asserts that the boolean
+combination exists. `Lax3Proofs.LocalityFun.localityBC` consumes this
+existential using `Classical.choose`, fixing one decomposition for the
+scatter choice, formula and ranks before the input graph or environment
+is supplied. Proof irrelevance makes that choice independent of the
+rank witness. The model-checking schedule uses this fixed decomposition.
+The headline theorem quantifies over the graph class, formula and
+positive exponent, then asserts the existence of a word-RAM program and
+time bounds that work for every input graph. This quantifier order lets
+the decomposition be fixed with those parameters; it does not assert a
+procedure that computes the program uniformly from them.
 
-The statement is an `axiom` on this concept surface and is proved in
-the proofs package of this submission. It is also the interface a
-future merge-width submission consumes, which is why the rewriting
-function is proofs-side and the existential is here: a consumer that
-needs the function can require the proofs package, and a consumer that
-needs only the equivalence takes the statement.
+The statement is an `axiom` on this concept surface, discharged by
+`Lax3Proofs.Assembly.locality` in the proofs package. The normal-form
+corollary and the model-checking decomposition consume this concept
+interface, whose proof is tracked as a separate dependency. The proofs
+package also provides the chosen decomposition and its specifications
+in `Lax3Proofs.LocalityFun` for consumers needing a fixed function.
 -/
 
 namespace Lax3.Locality
