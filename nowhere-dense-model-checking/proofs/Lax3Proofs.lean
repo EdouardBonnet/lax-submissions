@@ -150,6 +150,17 @@ import Lax3Proofs.SolveFrameCharge
 import Lax3Proofs.SolveUniformMachine
 import Lax3Proofs.SolveAugCharge
 import Lax3Proofs.SolveCoverClean
+import Lax3Proofs.SolveConcreteFrame
+import Lax3Proofs.SolveConcreteBounds
+import Lax3Proofs.SolveConcreteAlloc
+import Lax3Proofs.SolveConcreteNames
+import Lax3Proofs.SolveConcreteRoom
+import Lax3Proofs.SolveConcreteStages
+import Lax3Proofs.SolveConcreteOwned
+import Lax3Proofs.SolveConcreteBoundary
+import Lax3Proofs.SolveConcreteTapes
+import Lax3Proofs.SolveConcreteChain
+import Lax3Proofs.SolveConcrete
 
 -- The proofs package of submission Lax3.
 --

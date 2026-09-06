@@ -29,7 +29,7 @@ theorem frameStepClean_of_else_branch (B : ℕ) (S : Setup L)
       (σ.arrs (botFa j)).length = 2 ^ S.pal j * (Kq + 1) ∧
       (σ.arrs (botEa j)).length = Kq + 1 ∧
       (σ.arrs (botXa j)).length = Kq + 1)
-    -- the budget fit: the guard plus the larger branch
+    -- the budget fit: the guard plus the branch that runs
     (hKB : ∀ k j, j < S.depth → ∀ A : Arena (S.pal j) n₀,
       4 + (if A.G = ⊥ then botComK A.N (S.pal j) Kq (levelFml S j) else KE k j A)
         ≤ KB (k + 1) j A)
